@@ -26,11 +26,9 @@
 #define ARM64_WORKAROUND_845719			2
 #define ARM64_HAS_SYSREG_GIC_CPUIF		3
 
-#define ARM64_NCAPS				3
+#define ARM64_NCAPS					4
 
 #ifndef __ASSEMBLY__
-
-extern DECLARE_BITMAP(cpu_hwcaps, ARM64_NCAPS);
 
 struct arm64_cpu_capabilities {
 	const char *desc;
@@ -49,6 +47,8 @@ struct arm64_cpu_capabilities {
 		};
 	};
 };
+
+extern DECLARE_BITMAP(cpu_hwcaps, ARM64_NCAPS);
 
 static inline bool cpu_have_feature(unsigned int num)
 {
