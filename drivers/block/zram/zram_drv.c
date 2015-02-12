@@ -1477,22 +1477,19 @@ static struct attribute_group zram_disk_attr_group = {
 
 static int create_device(struct zram *zram, int device_id)
 {
+	struct request_queue *queue;
 	int ret = -ENOMEM;
 
 	init_rwsem(&zram->init_lock);
-#ifdef CONFIG_ZSM
-	spin_lock_init(&zram_node_mutex);
-	spin_lock_init(&zram_node4k_mutex);
-#endif
-	zram->queue = blk_alloc_queue(GFP_KERNEL);
-	if (!zram->queue) {
+
+	queue = blk_alloc_queue(GFP_KERNEL);
+	if (!queue) {
 		pr_err("Error allocating disk queue for device %d\n",
 			device_id);
 		goto out;
 	}
 
-	blk_queue_make_request(zram->queue, zram_make_request);
-	zram->queue->queuedata = zram;
+	blk_queue_make_request(queue, zram_make_request);
 
 	 /* gendisk structure */
 	zram->disk = alloc_disk(1);
@@ -1505,7 +1502,8 @@ static int create_device(struct zram *zram, int device_id)
 	zram->disk->major = zram_major;
 	zram->disk->first_minor = device_id;
 	zram->disk->fops = &zram_devops;
-	zram->disk->queue = zram->queue;
+	zram->disk->queue = queue;
+	zram->disk->queue->queuedata = zram;
 	zram->disk->private_data = zram;
 	snprintf(zram->disk->disk_name, 16, "zram%d", device_id);
 
@@ -1556,7 +1554,7 @@ out_free_disk:
 	del_gendisk(zram->disk);
 	put_disk(zram->disk);
 out_free_queue:
-	blk_cleanup_queue(zram->queue);
+	blk_cleanup_queue(queue);
 out:
 	return ret;
 }
@@ -1577,10 +1575,9 @@ static void destroy_devices(unsigned int nr)
 
 		zram_reset_device(zram);
 
+		blk_cleanup_queue(zram->disk->queue);
 		del_gendisk(zram->disk);
 		put_disk(zram->disk);
-
-		blk_cleanup_queue(zram->queue);
 	}
 
 	kfree(zram_devices);
