@@ -1297,7 +1297,7 @@ void xhci_handle_command_timeout(unsigned long data)
 	/* command ring failed to restart, or host removed. Bail out */
 	if (second_timeout || xhci->xhc_state & XHCI_STATE_REMOVING) {
 		spin_unlock_irqrestore(&xhci->lock, flags);
-		xhci_err(xhci, "command timed out twice, ring start fail?\n");
+		xhci_dbg(xhci, "command timed out twice, ring start fail?\n");
 		xhci_cleanup_command_queue(xhci);
 		return;
 	}
