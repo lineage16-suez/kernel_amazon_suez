@@ -357,9 +357,6 @@ static void snd_complete_urb(struct urb *urb)
 		     ep->chip->shutdown))		/* device disconnected */
 		goto exit_clear;
 
-	if (unlikely(!test_bit(EP_FLAG_RUNNING, &ep->flags)))
-		goto exit_clear;
-
 	if (usb_pipeout(ep->pipe)) {
 		retire_outbound_urb(ep, ctx);
 		/* can be stopped during retire callback */
@@ -510,11 +507,6 @@ static int wait_clear_urbs(struct snd_usb_endpoint *ep)
 			"timeout: still %d active urbs on EP #%x\n",
 			alive, ep->ep_num);
 	clear_bit(EP_FLAG_STOPPING, &ep->flags);
-
-	ep->data_subs = NULL;
-	ep->sync_slave = NULL;
-	ep->retire_data_urb = NULL;
-	ep->prepare_data_urb = NULL;
 
 	return 0;
 }
@@ -965,6 +957,10 @@ void snd_usb_endpoint_stop(struct snd_usb_endpoint *ep)
 
 	if (--ep->use_count == 0) {
 		deactivate_urbs(ep, false);
+		ep->data_subs = NULL;
+		ep->sync_slave = NULL;
+		ep->retire_data_urb = NULL;
+		ep->prepare_data_urb = NULL;
 		set_bit(EP_FLAG_STOPPING, &ep->flags);
 	}
 }
