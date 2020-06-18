@@ -51,3 +51,6 @@ config ZSM
           This feature will find same page in zram and merge these same pages
           in order to save memory
 
+config ZRAM_DEFAULT_COMP_ALGORITHM
+	string "Default ZRAM algorithm"
+	default "lzo"
