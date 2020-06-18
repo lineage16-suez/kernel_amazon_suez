@@ -1652,6 +1652,8 @@ out:
 
 static void destroy_devices(unsigned int nr)
 {
+	struct zram *zram;
+
 	del_gendisk(zram->disk);
 	put_disk(zram->disk);
 
