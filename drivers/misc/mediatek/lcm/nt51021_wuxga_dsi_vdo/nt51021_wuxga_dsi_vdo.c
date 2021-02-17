@@ -92,7 +92,7 @@ static LCM_UTIL_FUNCS lcm_util = {
 #define UDELAY(n) (lcm_util.udelay(n))
 #define MDELAY(n) (lcm_util.mdelay(n))
 
-unsigned int GPIO_LCD_RST_EN;
+unsigned int GPIO_LCD_RST_EN = (unsigned int) -EINVAL;
 unsigned int LCM_ID1_GPIO;
 unsigned int LCM_ID0_GPIO;
 
@@ -440,8 +440,7 @@ static int nt51021_esd_check_worker_kthread(void *unused)
 			break;
 
 		ret = nt51021_esd_check();
-
-		if (ret > 0) {
+		if (ret > 0 && gpio_is_valid(GPIO_LCD_RST_EN)) {
 			lcm_set_gpio_output(GPIO_LCD_RST_EN, GPIO_OUT_ZERO);
 			MDELAY(5);
 			lcm_set_gpio_output(GPIO_LCD_RST_EN, GPIO_OUT_ONE);

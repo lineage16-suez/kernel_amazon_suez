@@ -64,14 +64,18 @@ static int we_reg_count;
 #undef MCUCFG_BASE
 #ifdef CONFIG_OF
 #define MCUCFG_BASE          spm_mcucfg
+#define SPM_EINT_BASE	     spm_eint_base
 #else
 #define MCUCFG_BASE          (0xF0200000)
 #endif
 #define MP0_AXI_CONFIG          (MCUCFG_BASE + 0x2C)
 #define MP1_AXI_CONFIG          (MCUCFG_BASE + 0x22C)
 #define ACINACTM                (1<<4)
+#define EINT_AP_MAXNUMBER		224
 
 static int spm_dormant_sta = MT_CPU_DORMANT_RESET;
+bool wake_eint_status[EINT_AP_MAXNUMBER];
+bool eint_wake = 0;
 /**********************************************************
  * PCM sequence for cpu suspend
  **********************************************************/
@@ -378,6 +382,24 @@ static void spm_clean_after_wakeup(void)
 #endif
 }
 
+static void spm_get_wake_eint_status(void)
+{
+	unsigned int status, index;
+	unsigned int offset, reg_base;
+
+	for (reg_base = 0; reg_base < EINT_AP_MAXNUMBER; reg_base += 32) {
+		status = spm_read((reg_base / 32) * 4 + SPM_EINT_BASE);
+		for (offset = 0; offset < 32; offset++) {
+			index = reg_base + offset;
+			if (index >= EINT_AP_MAXNUMBER)
+				break;
+			wake_eint_status[index] = (status >> offset) & 0x1;
+			if (wake_eint_status[index])
+				spm_crit2("wake up by EINT:%d\n", index);
+		}
+	}
+}
+
 static wake_reason_t spm_output_wake_reason(struct wake_status *wakesta, struct pcm_desc *pcmdesc)
 {
 	wake_reason_t wr;
@@ -385,10 +407,14 @@ static wake_reason_t spm_output_wake_reason(struct wake_status *wakesta, struct 
 	wr = __spm_output_wake_reason(wakesta, pcmdesc, true);
 
 	spm_crit2("big core = %d, suspend dormant state = %d\n", SPM_CTRL_BIG_CPU, spm_dormant_sta);
-/* TODO: eint may need to provide new APIs
-	if (wakesta->r12 & WAKE_SRC_EINT)
-		mt_eint_print_status();
-*/
+// TODO: eint may need to provide new APIs
+	if (wakesta->r12 & WAKE_SRC_EINT){
+		eint_wake = 1;
+		spm_get_wake_eint_status();
+	}
+	else{
+		eint_wake = 0;
+	}
 	return wr;
 }
 
@@ -753,6 +779,13 @@ void spm_output_sleep_option(void)
 void spm_suspend_init(void)
 {
 	spm_set_suspend_pcm_ver();
+}
+
+bool spm_read_eint_status(unsigned int eint_num)
+{
+	if (eint_wake)
+		return wake_eint_status[eint_num];
+	return 0;
 }
 
 MODULE_DESCRIPTION("SPM-Sleep Driver v1.0");

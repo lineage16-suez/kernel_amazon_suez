@@ -348,7 +348,18 @@ static unsigned int bst_tlv[] = {
 static const DECLARE_TLV_DB_SCALE(adc_vol_tlv, -17625, 375, 0);
 
 static const char *rt5514_dsp_mode[] = {
-	"Stop", "Mode1", "Mode2", "Mode3", "Mode4", "Mode5", "Mode6"
+	"Stop", "Mode1", "Mode2", "Mode3", "Mode4", "Mode5", "Mode6", "Mode7", "Mode8"
+};
+/* Note that, the binary naming rule of DSP FW may be different to the CSM layer */
+static const char *rt551x_dsp_binary_name[] = {
+	"",
+	"SMicBin.dat", "SMicBin.dat", "SMicBin.dat", "SMicBin_rt5514_mode14.dat",
+	"SMicBin.dat", "SMicBin.dat", "SMicBin.dat", "SMicBin_rt5514_mode24.dat"
+};
+static const char *rt551x_dsp_tdn_name[] = {
+	"",
+	"SMicTD1.dat", "SMicTD2.dat", "SMicTD3.dat", "",
+	"SMicTD4.dat", "SMicTD5.dat", "SMicTD6.dat", ""
 };
 
 static const SOC_ENUM_SINGLE_DECL(rt5514_dsp_mod_enum, 0, 0,
@@ -382,7 +393,6 @@ void rt5514_parse_header(struct snd_soc_codec *codec, const u8 *buf)
 	SMicFWSubHeader sMicFWSubHeader;
 
 	int i, offset = 0;
-	char file_path[32];
 
 	sMicFWHeader.Sync = rt5514_4byte_le_to_uint(buf);
 	dev_dbg(codec->dev, "sMicFWHeader.Sync = %08x\n", sMicFWHeader.Sync);
@@ -451,6 +461,15 @@ void rt5514_parse_header(struct snd_soc_codec *codec, const u8 *buf)
 		}
 #endif
 	}
+	/* pryonLite's DSP FW version is named from v60xx or 70xx
+	 * sensory's DSP FW version is named from v800x, no-engine DSP FW version is named from v99xx.
+	 * However, using FW version is not a good idea, we'd like to use TDn name string to decide TDn loading instead
+	 * That means, if the tdn_name is "", then bypass the TDn binary loading */
+	if (strlen(rt551x_dsp_tdn_name[rt5514->dsp_enabled]) == 0)
+	{
+		dev_dbg(codec->dev, "Mode %d, FW version = %d, pryonLite lib, ignore TDs\n", rt5514->dsp_enabled, sMicFWHeader.Version);
+		return ;
+	}
 
 	offset += 4;
 	sMicFWSubHeader.NumTD = rt5514_4byte_le_to_uint(buf + offset);
@@ -473,8 +492,7 @@ void rt5514_parse_header(struct snd_soc_codec *codec, const u8 *buf)
 		dev_dbg(codec->dev, "sMicFWSubHeader.TDArray[%d].Addr = %08x\n",
 			i, sMicFWSubHeader.TDArray[i].Addr);
 
-		snprintf(file_path, sizeof(file_path),"SMicTD%u.dat", rt5514->dsp_enabled);
-		request_firmware(&fw, file_path, /*codec->dev*/NULL);
+		request_firmware(&fw, rt551x_dsp_tdn_name[rt5514->dsp_enabled], NULL);
 		if (fw) {
 			rt5514_spi_burst_write(sMicFWSubHeader.TDArray[i].Addr,
 				fw->data, ((fw->size/8)+1)*8);
@@ -572,7 +590,7 @@ static int rt5514_set_dsp_mode(struct snd_soc_codec *codec, int DSPMode)
 			}
 			regcache_cache_bypass(rt5514->regmap, true);
 			rt5514_enable_dsp_clock(rt5514);
-			request_firmware(&fw, "SMicBin.dat", /*codec->dev*/NULL);
+			request_firmware(&fw, rt551x_dsp_binary_name[rt5514->dsp_enabled], NULL);
 			if (fw)
 			{
 				rt5514_parse_header(codec, fw->data);

@@ -777,7 +777,7 @@ SUBBAND_CHANNEL_T g_rRlmSubBand[] = {
 
 
 static const UINT_16 g_u2TxPwrRegion1[] = {
-	COUNTRY_CODE_US
+	COUNTRY_CODE_US, COUNTRY_CODE_CA
 };
 
 static const UINT_16 g_u2TxPwrRegion2[] = {

@@ -752,6 +752,8 @@
  */
 #define CFG_SUPPORT_WAKEUP_STATISTICS       1
 
+#define CFG_SUPPORT_WAKEUP_REASON_DEBUG		1	/* debug which packet wake up host */
+
 /*------------------------------------------------------------------------------
  * Flags of channel list in scan request SUPPORT
  *------------------------------------------------------------------------------

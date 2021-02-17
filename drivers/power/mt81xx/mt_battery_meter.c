@@ -109,6 +109,7 @@ s32 g_hw_ocv_debug = 0;
 s32 g_hw_soc_debug = 0;
 s32 g_sw_soc_debug = 0;
 s32 g_rtc_soc_debug = 0;
+s32 g_boot_reason_debug = 0;
 
 /* HW FG */
 s32 gFG_DOD0 = 0;
@@ -1331,12 +1332,12 @@ void dod_init(void)
 	g_sw_soc_debug = gFG_capacity_by_v_init;
 	g_fg_dbg_bat_hwocv = gFG_voltage;
 
-	bm_print(BM_LOG_FULL, "[FGADC] get_hw_ocv=%d, HW_SOC=%d, SW_SOC = %d\n",
-		 gFG_voltage, gFG_capacity_by_v, gFG_capacity_by_v_init);
-
 	/* compare with hw_ocv & sw_ocv, check if less than or equal to 5% tolerance */
-	if (abs(gFG_capacity_by_v_init - gFG_capacity_by_v) > 5)
+	if (abs(gFG_capacity_by_v_init - gFG_capacity_by_v) > 5) {
+		pr_warn("[%s]: overwrite HW_SOC(%d) by SW_SOC(%d)\n",
+			__func__, gFG_capacity_by_v, gFG_capacity_by_v_init);
 		gFG_capacity_by_v = gFG_capacity_by_v_init;
+	}
 
 	/* ------------------------------------------------------------------------------- */
 #endif
@@ -1346,11 +1347,13 @@ void dod_init(void)
 #else
 	g_rtc_fg_soc = get_rtc_spare_fg_value();
 	g_rtc_soc_debug = g_rtc_fg_soc;
-	pr_warn("%s: residual index %d\n", __func__, get_rtc_residual_fg_value());
+	pr_warn("[%s]: residual index %d\n", __func__, get_rtc_residual_fg_value());
 #endif
 
-	pr_warn("%s: %d, %d, %d, %d\n", __func__, g_hw_ocv_debug, g_hw_soc_debug, g_sw_soc_debug,
-		  g_rtc_soc_debug);
+	g_boot_reason_debug = get_boot_reason();
+	pr_warn("[%s]: boot_reason(%d) HW_OCV(%d) HW_SOC(%d) SW_SOC(%d) RTC_SOC(%d)\n",
+			__func__, g_boot_reason_debug, g_hw_ocv_debug,
+			g_hw_soc_debug, g_sw_soc_debug, g_rtc_soc_debug);
 
 #if defined(CONFIG_SOC_BY_HW_FG)
 	/* decrease rtc soc by 1 if swocv is less by threshold 15% */
@@ -1379,17 +1382,17 @@ void dod_init(void)
 	    || ((g_rtc_fg_soc != 0)
 		&& (get_boot_reason() == BR_WDT_BY_PASS_PWK || get_boot_reason() == BR_WDT
 		    || get_boot_mode() == RECOVERY_BOOT))) {
-
+		pr_info("[%s]: overwrite soc_v[%d] by soc_rtc[%d]\n",
+				__func__, gFG_capacity_by_v, g_rtc_fg_soc);
 		gFG_capacity_by_v = g_rtc_fg_soc;
 	}
-	bm_print(BM_LOG_FULL, "[FGADC] g_rtc_fg_soc=%d, gFG_capacity_by_v=%d\n",
-		 g_rtc_fg_soc, gFG_capacity_by_v);
 
 	if (gFG_capacity_by_v == 0 && bat_is_charger_exist() == true) {
 		gFG_capacity_by_v = 1;
-
-		bm_print(BM_LOG_FULL, "[FGADC] gFG_capacity_by_v=%d\n", gFG_capacity_by_v);
+		pr_warn("[%s]: force to set gFG_capacity_by_v=%d\n",
+					__func__, gFG_capacity_by_v);
 	}
+
 	gFG_capacity = gFG_capacity_by_v;
 	gFG_capacity_by_c_init = gFG_capacity;
 	gFG_capacity_by_c = gFG_capacity;
@@ -1398,6 +1401,9 @@ void dod_init(void)
 	gFG_DOD1 = gFG_DOD0;
 
 	gfg_percent_check_point = gFG_capacity;
+
+	pr_warn("[%s]: DOD0=%d g_rtc_fg_soc=%d, gFG_capacity_by_v=%d\n",
+		__func__, gFG_DOD0, g_rtc_fg_soc, gFG_capacity);
 
 #if 1				/* defined(CHANGE_TRACKING_POINT) */
 	gFG_15_vlot = fgauge_read_v_by_capacity((100 - g_tracking_point));
@@ -1769,11 +1775,10 @@ void fgauge_algo_run(void)
 	}
 
 /* 5. Logging */
-	bm_print(BM_LOG_CRTI, "[FGADC] GG init cond. hw_ocv=%d, HW_SOC=%d, SW_SOC=%d, RTC_SOC=%d\n",
-		 g_hw_ocv_debug, g_hw_soc_debug, g_sw_soc_debug, g_rtc_soc_debug);
+	pr_info("[fg_data:0] GG init cond. hw_ocv=%d, HW_SOC=%d, SW_SOC=%d, RTC_SOC=%d, boot_reason(%d)\n",
+		 g_hw_ocv_debug, g_hw_soc_debug, g_sw_soc_debug, g_rtc_soc_debug, g_boot_reason_debug);
 
-	bm_print(BM_LOG_CRTI,
-		 "[FGADC] %d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\r\n",
+	pr_info("[fg_data:1] %d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
 		 gFG_Is_Charging, gFG_current, gFG_columb, gFG_voltage, gFG_capacity_by_v,
 		 gFG_capacity_by_c, gFG_capacity_by_c_init, gFG_BATT_CAPACITY,
 		 gFG_BATT_CAPACITY_aging, gFG_compensate_value, gFG_ori_voltage,
@@ -1805,8 +1810,8 @@ void fgauge_algo_run_init(void)
 	gFG_voltage = gFG_voltage + fgauge_compensate_battery_voltage_recursion(gFG_voltage, 5);	/* mV */
 	gFG_voltage = gFG_voltage + p_bat_meter_data->ocv_board_compesate;
 
-	pr_warn("cv:%d ocv:%d i:%d r:%d\n", gFG_voltage_init, gFG_voltage, gFG_current,
-		  gFG_resistance_bat);
+	pr_warn("[%s]: cv:%d ocv:%d i:%d r:%d\n", __func__,
+		gFG_voltage_init, gFG_voltage, gFG_current, gFG_resistance_bat);
 
 	ret = battery_meter_ctrl(BATTERY_METER_CMD_GET_HW_FG_CAR, &gFG_columb);
 
@@ -1829,8 +1834,7 @@ void fgauge_algo_run_init(void)
 	dod_init();
 
 /* 5. Logging */
-	bm_print(BM_LOG_FULL,
-		 "[FGADC] %d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\r\n",
+	pr_warn("[%s] %d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\r\n", __func__,
 		 gFG_Is_Charging, gFG_current, gFG_columb, gFG_voltage, gFG_capacity_by_v,
 		 gFG_capacity_by_c, gFG_capacity_by_c_init, gFG_BATT_CAPACITY,
 		 gFG_BATT_CAPACITY_aging, gFG_compensate_value, gFG_ori_voltage,
@@ -2244,6 +2248,17 @@ s32 battery_meter_get_battery_soc(void)
 #endif
 }
 
+void battery_meter_get_fg_init_condition(struct fg_init_condition *data)
+{
+	data->dod0 = gFG_DOD0;
+	data->dod1 = gFG_DOD1;
+	data->hw_ocv_init = g_hw_ocv_debug;
+	data->hw_soc_init = g_hw_soc_debug;
+	data->sw_soc_init = g_sw_soc_debug;
+	data->rtc_soc_init = g_rtc_soc_debug;
+	data->boot_reason = g_boot_reason_debug;
+}
+
 /* Here we compensate D1 by a factor from Qmax with loading. */
 s32 battery_meter_trans_battery_percentage(s32 d_val)
 {
@@ -2274,8 +2289,8 @@ s32 battery_meter_trans_battery_percentage(s32 d_val)
 	if (d_val > 100)
 		d_val = 100;
 
-	bm_print(BM_LOG_CRTI, "[battery_meter_trans_battery_percentage] %d,%d,%d,%d,%d,%d\r\n",
-		 temp_val, C_0mA, C_600mA, d_val_before, d_val, g_currentfactor);
+	pr_info("[fg_data:2] %d,%d,%d,%d,%d,%d\n", temp_val, C_0mA,
+			C_600mA, d_val_before, d_val, g_currentfactor);
 
 	return d_val;
 }

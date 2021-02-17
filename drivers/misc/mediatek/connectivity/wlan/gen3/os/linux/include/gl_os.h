@@ -679,6 +679,8 @@ extern BOOLEAN fgIsBusAccessFailed;
 #define GLUE_FLAG_RX_TO_OS_BIT      (14)
 #define GLUE_FLAG_HIF_FW_OWN_BIT    (15)
 #endif
+#define GLUE_FLAG_FINISH_CHARGING	 	  BIT(16)
+#define GLUE_FLAG_FINISH_CHARGING_BIT		(16)
 
 /* Macros for flag operations for the Adapter structure */
 #define GLUE_SET_FLAG(_M, _F)           ((_M)->ulFlag |= (_F))
@@ -1018,7 +1020,11 @@ struct _GLUE_INFO_T {
 
 	INT_32 i4RssiCache;
 	UINT_32 u4LinkSpeedCache;
-
+	struct DRV_COMMON_WORK_T rDrvWork;
+	struct LINK_MGMT rAppTxRxStat;
+	struct LINK_MGMT rOtherDataStat;
+	struct LINK_MGMT rSockAppMapCache;
+	struct DRV_PKT_STAT_T arDrvPktStat[DRV_PKT_NUM];
 };
 
 typedef irqreturn_t(*PFN_WLANISR) (int irq, void *dev_id, struct pt_regs *regs);

@@ -10086,7 +10086,8 @@ wlanoidSetCountryCode(IN P_ADAPTER_T prAdapter,
 			(u2Country != COUNTRY_CODE_FR) &&
 			(u2Country != COUNTRY_CODE_IT) &&
 			(u2Country != COUNTRY_CODE_GB) &&
-			(u2Country != COUNTRY_CODE_ES))
+			(u2Country != COUNTRY_CODE_ES) &&
+			(u2Country != COUNTRY_CODE_CA))
 		u2Country = COUNTRY_CODE_WW;
 
 	if (!rlmIsValidCountryCode(u2Country))
@@ -12406,3 +12407,18 @@ wlanoidSetResetCounter(IN P_ADAPTER_T prAdapter,
 					0	/* u4SetQueryBufferLen */
 					);
 }
+
+WLAN_STATUS wlanoidNotifyTRxStats(IN P_ADAPTER_T prAdapter,
+	IN PVOID pvQueryBuffer, IN UINT_32 u4QueryBufferLen, OUT PUINT_32 pu4QueryInfoLen)
+{
+	glNotifyAppTxRx(prAdapter->prGlueInfo, pvQueryBuffer);
+	return WLAN_STATUS_SUCCESS;
+}
+
+WLAN_STATUS wlanoidNotifyChargeStatus(IN P_ADAPTER_T prAdapter,
+	IN PVOID pvQueryBuffer, IN UINT_32 u4QueryBufferLen, OUT PUINT_32 pu4QueryInfoLen)
+{
+	glNotifyWakeups((PUINT_8)pvQueryBuffer, WAKE_TYPE_FINISH_STATUS);
+	return WLAN_STATUS_SUCCESS;
+}
+

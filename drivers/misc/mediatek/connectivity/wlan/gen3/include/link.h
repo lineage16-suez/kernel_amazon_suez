@@ -61,6 +61,11 @@ typedef struct _LINK_T {
 	UINT_32 u4NumElem;
 } LINK_T, *P_LINK_T;
 
+struct LINK_MGMT {
+	LINK_T rUsingLink;
+	LINK_T rFreeLink;
+};
+
 /*******************************************************************************
 *                            P U B L I C   D A T A
 ********************************************************************************
@@ -206,6 +211,50 @@ typedef struct _LINK_T {
 	 &prObj->rMember != (P_LINK_ENTRY_T)(prLink); \
 	 prObj = prNextObj, \
 	 prNextObj = LINK_ENTRY(prNextObj->rMember.prNext, _TYPE, rMember))
+
+#define LINK_MGMT_INIT(prLinkMgmt) \
+			do { \
+				LINK_INITIALIZE(&((struct LINK_MGMT *)prLinkMgmt)->rUsingLink); \
+				LINK_INITIALIZE(&((struct LINK_MGMT *)prLinkMgmt)->rFreeLink); \
+			} while (0)
+
+#define LINK_MGMT_GET_ENTRY(prLinkMgmt, prEntry, EntryType, memType) \
+			do { \
+				LINK_REMOVE_HEAD(&((struct LINK_MGMT *)prLinkMgmt)->rFreeLink, \
+					prEntry, EntryType*); \
+				if (!prEntry) \
+					prEntry = kalMemAlloc(sizeof(EntryType), memType); \
+				if (prEntry) {\
+					kalMemZero(prEntry, sizeof(EntryType));\
+					LINK_INSERT_TAIL(&((struct LINK_MGMT *)prLinkMgmt)->rUsingLink, &prEntry->rLinkEntry); \
+				} \
+			} while (0)
+
+#define LINK_MGMT_RETURN_ENTRY(prLinkMgmt, prEntry) \
+			do {\
+				if (!prEntry)\
+					break;\
+				LINK_REMOVE_KNOWN_ENTRY(&((struct LINK_MGMT *)prLinkMgmt)->rUsingLink, \
+					prEntry); \
+				LINK_INSERT_TAIL(&((struct LINK_MGMT *)prLinkMgmt)->rFreeLink, &prEntry->rLinkEntry); \
+			} while (0)
+
+#define LINK_MGMT_UNINIT(prLinkMgmt, EntryType, memType) \
+			do { \
+				EntryType *prEntry = NULL; \
+				P_LINK_T prFreeList = &((struct LINK_MGMT *)prLinkMgmt)->rFreeLink; \
+				P_LINK_T prUsingList = &((struct LINK_MGMT *)prLinkMgmt)->rUsingLink; \
+				LINK_REMOVE_HEAD(prFreeList, prEntry, EntryType *); \
+				while (prEntry) { \
+					kalMemFree(prEntry, memType, sizeof(EntryType)); \
+					LINK_REMOVE_HEAD(prFreeList, prEntry, EntryType *); \
+				} \
+				LINK_REMOVE_HEAD(prUsingList, prEntry, EntryType *); \
+				while (prEntry) { \
+					kalMemFree(prEntry, memType, sizeof(EntryType)); \
+					LINK_REMOVE_HEAD(prUsingList, prEntry, EntryType *); \
+				} \
+			} while (0)
 
 /*******************************************************************************
 *                  F U N C T I O N   D E C L A R A T I O N S

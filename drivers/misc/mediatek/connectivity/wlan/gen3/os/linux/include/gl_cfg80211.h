@@ -182,6 +182,10 @@ enum ENUM_TESTMODE_RX_FILTER_ATTR {
 *                            P U B L I C   D A T A
 ********************************************************************************
 */
+#if CFG_SUPPORT_WAKEUP_REASON_DEBUG
+extern struct semaphore g_halt_sem;
+extern int g_u4HaltFlag;
+#endif
 
 /*******************************************************************************
 *                           P R I V A T E   D A T A
@@ -307,6 +311,9 @@ mtk_cfg80211_sched_scan_start(IN struct wiphy *wiphy,
 int mtk_cfg80211_sched_scan_stop(IN struct wiphy *wiphy, IN struct net_device *ndev);
 
 int mtk_cfg80211_assoc(struct wiphy *wiphy, struct net_device *ndev, struct cfg80211_assoc_request *req);
+
+int mtk_cfg80211_resume(struct wiphy *wiphy);
+int mtk_cfg80211_suspend(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
 
 int
 mtk_cfg80211_change_station(struct wiphy *wiphy, struct net_device *ndev, const u8 *mac,

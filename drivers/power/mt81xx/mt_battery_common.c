@@ -160,6 +160,8 @@ extern unsigned long get_virtualsensor_temp(void);
 #endif /* CONFIG_AMAZON_METRICS_LOG */
 
 struct battery_common_data g_bat;
+struct fg_error_detection g_fg_err_det;
+
 
 /* Battery Notify */
 #define BATTERY_NOTIFY_CASE_0001_VCHARGER
@@ -2237,6 +2239,68 @@ static bool check_top_off_state(void)
 }
 #endif
 
+#define AGED_BATERY_SOC_MAX 95
+#define HIGH_FG_ERROR_SOC_MAX 80
+extern void battery_meter_get_fg_init_condition(struct fg_init_condition *data);
+static int mt_battery_high_fg_error_det(void)
+{
+	struct fg_init_condition *data = &g_fg_err_det.data;
+	struct timespec *ts_1 = &g_fg_err_det.last_full_ts;
+	struct timespec *ts_2 = &g_fg_err_det.detected_ts;
+	char buf[128] = {0};
+	bool high_err = false;
+
+	/*
+	 * Detection condition when both conditions are satisfied
+	 * 1. bat_full is true, charger IC report "charge done"
+	 * 2. 80% < SOC < 95% as aged battery
+	 * 3. SOC < 80% as high FG error
+	 *
+	 * Clear detected conditon when one of conditions is satisfied
+	 * 1. unplug charger
+	 * 2. UI_SOC smooth to 100%
+	 */
+	if (!g_fg_err_det.is_detected && BMT_status.SOC <= AGED_BATERY_SOC_MAX) {
+		g_fg_err_det.is_detected = true;
+		memset(data, 0, sizeof(struct fg_init_condition));
+		battery_meter_get_fg_init_condition(data);
+		data->ui_soc = BMT_status.UI_SOC;
+		data->soc = BMT_status.SOC;
+		get_monotonic_boottime(ts_2);
+		data->soc_gap = data->hw_soc_init - data->rtc_soc_init;
+		data->time_gap = abs(ts_2->tv_sec - ts_1->tv_sec);
+		if (data->soc <= HIGH_FG_ERROR_SOC_MAX)
+			high_err = true;
+		else
+			high_err = false;
+
+		snprintf(buf, sizeof(buf), "chg_done_%d:def:not_chg_full=1;CT;1:NR", data->soc);
+#if defined(CONFIG_AMAZON_METRICS_LOG)
+		log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
+#endif
+		memset(buf, 0, sizeof(buf));
+		snprintf(buf, sizeof(buf), "%s:def:ui_soc=%d;CT;1,hw_soc=%d;CT;1,rtc_soc=%d;CT;1,soc_gap=%d;CT;1,ts_gap=%ld;CT;1:NR",
+			high_err ? "high_fg_error" : "aged_battery",
+			data->ui_soc, data->hw_soc_init, data->rtc_soc_init,
+			data->soc_gap, data->time_gap);
+
+#if defined(CONFIG_AMAZON_METRICS_LOG)
+		log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
+#endif
+
+	}
+
+	if (g_fg_err_det.is_detected)
+		pr_notice("%s: %d [%d %d] [%d %d] %d [%d %d %d] %d %ld\n",
+			__func__,
+			data->boot_reason, data->ui_soc, data->soc,
+			data->dod0, data->dod1, data->hw_ocv_init,
+			data->hw_soc_init, data->sw_soc_init, data->rtc_soc_init,
+			data->soc_gap, data->time_gap);
+
+	return 0;
+}
+
 static bool mt_battery_100Percent_tracking_check(void)
 {
 	bool resetBatteryMeter = false;
@@ -2267,6 +2331,7 @@ static bool mt_battery_100Percent_tracking_check(void)
 			if (BMT_status.UI_SOC >= 100)
 				BMT_status.UI_SOC = 100;
 			resetBatteryMeter = false;
+			g_fg_err_det.is_detected = false;
 		} else if (BMT_status.UI_SOC >= 100) {
 			BMT_status.UI_SOC = 100;
 
@@ -2277,9 +2342,13 @@ static bool mt_battery_100Percent_tracking_check(void)
 			} else {
 				resetBatteryMeter = false;
 			}
+			g_fg_err_det.is_detected = false;
 		} else {
 			/* increase UI percentage every xxs */
 			if (timer_counter >= (cust_sync_time / BAT_TASK_PERIOD)) {
+				/* Only start detection when it's smoothing */
+				mt_battery_high_fg_error_det();
+
 				timer_counter = 1;
 				BMT_status.UI_SOC++;
 			} else {
@@ -2499,11 +2568,11 @@ static void battery_update(struct battery_data *bat_data)
 
 	if (resetBatteryMeter == true)
 		battery_meter_reset(true);
-	else
+	else if (BMT_status.bat_full == false)
 		mt_battery_Sync_UI_Percentage_to_Real();
 
-	battery_log(BAT_LOG_FULL, "UI_SOC=(%d), resetBatteryMeter=(%d)\n",
-		    BMT_status.UI_SOC, resetBatteryMeter);
+	battery_log(BAT_LOG_FULL, "UI_SOC=(%d), resetBatteryMeter=(%d), full(%d)\n",
+		    BMT_status.UI_SOC, resetBatteryMeter, BMT_status.bat_full);
 
 	if (battery_meter_ocv2cv_trans_support()) {
 		/* We store capacity before loading compenstation in RTC */
@@ -2594,6 +2663,13 @@ static void battery_update(struct battery_data *bat_data)
 #endif
 	}
 	bat_status_old = bat_data->BAT_STATUS;
+
+	if (bat_status_old ^ bat_data->BAT_STATUS) {
+		if (bat_data->BAT_STATUS == POWER_SUPPLY_STATUS_FULL) {
+			get_monotonic_boottime(&g_fg_err_det.last_full_ts);
+			pr_info("%s: BAT_STATUS become to FULL\n", __func__);
+		}
+	}
 
 	power_supply_changed(bat_psy);
 }
@@ -3397,6 +3473,7 @@ static void mt_battery_charger_detect_check(void)
 		BMT_status.CC_charging_time = 0;
 		BMT_status.TOPOFF_charging_time = 0;
 		BMT_status.POSTFULL_charging_time = 0;
+		g_fg_err_det.is_detected = false;
 
 #ifdef CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
 		if (g_platform_boot_mode == KERNEL_POWER_OFF_CHARGING_BOOT

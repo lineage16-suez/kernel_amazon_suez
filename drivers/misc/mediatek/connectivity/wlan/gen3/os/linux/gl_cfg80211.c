@@ -2379,6 +2379,73 @@ int mtk_cfg80211_assoc(struct wiphy *wiphy, struct net_device *ndev, struct cfg8
 	return 0;
 }
 
+static VOID wlanNotifyTRxOutputWork(PUINT_8 pucParams)
+{
+	UINT_32 u4InfoLen = 0;
+	P_GLUE_INFO_T prGlueInfo = *(P_GLUE_INFO_T *)pucParams;
+
+	DBGLOG(INIT, INFO, "Output App Tx Rx statistics\n");
+	kalIoctl(prGlueInfo, wlanoidNotifyTRxStats, NULL, 0, FALSE, FALSE, FALSE, &u4InfoLen);
+}
+
+/*----------------------------------------------------------------------------*/
+/*!
+ * @brief cfg80211 suspend callback, will be invoked in wiphy_suspend.
+ *
+ * @param wiphy: pointer to wiphy
+ *        wow:   pointer to cfg80211_wowlan
+ *
+ * @retval 0:       successful
+ *         others:  failure
+ */
+/*----------------------------------------------------------------------------*/
+int	mtk_cfg80211_suspend(struct wiphy *wiphy, struct cfg80211_wowlan *wow)
+{
+	P_GLUE_INFO_T prGlueInfo = NULL;
+
+	down(&g_halt_sem);
+	if (g_u4HaltFlag || !wiphy)
+		goto end;
+
+	prGlueInfo = (P_GLUE_INFO_T) wiphy_priv(wiphy);
+
+	set_bit(SUSPEND_FLAG_FOR_WAKEUP_REASON, &prGlueInfo->prAdapter->ulSuspendFlag);
+	if (glIsDataStatEnabled()) {
+		set_bit(SUSPEND_FLAG_FOR_APP_TRX_STAT, &prGlueInfo->prAdapter->ulSuspendFlag);
+		glLogSuspendResumeTime(TRUE);
+	}
+end:
+	up(&g_halt_sem);
+	return 0;
+}
+
+int mtk_cfg80211_resume(struct wiphy *wiphy)
+{
+	P_GLUE_INFO_T prGlueInfo = NULL;
+
+	down(&g_halt_sem);
+	if (g_u4HaltFlag || !wiphy)
+		goto end;
+
+	prGlueInfo = (P_GLUE_INFO_T) wiphy_priv(wiphy);
+	if (glIsDataStatEnabled() &&
+		test_and_clear_bit(SUSPEND_FLAG_FOR_APP_TRX_STAT, &prGlueInfo->prAdapter->ulSuspendFlag) &&
+		kalWakeupFromSleep()) {
+		static UINT_8 aucPsyWorkBuf[sizeof(struct DRV_COMMON_WORK_FUNC_T) + sizeof(prGlueInfo)];
+		struct DRV_COMMON_WORK_FUNC_T *prPsyWork = (struct DRV_COMMON_WORK_FUNC_T *)&aucPsyWorkBuf[0];
+		P_GLUE_INFO_T *pprGlueInfo = (P_GLUE_INFO_T *)prPsyWork->params;
+
+		glLogSuspendResumeTime(FALSE);
+		*pprGlueInfo = prGlueInfo;
+		prPsyWork->work_func = wlanNotifyTRxOutputWork;
+		kalScheduleCommonWork(&prGlueInfo->rDrvWork, prPsyWork);
+		DBGLOG(INIT, INFO, "Output App Tx Rx statistics\n");
+	}
+end:
+	up(&g_halt_sem);
+	return 0;
+}
+
 #if CFG_SUPPORT_NFC_BEAM_PLUS
 
 int mtk_cfg80211_testmode_get_scan_done(IN struct wiphy *wiphy, IN void *data, IN int len, IN P_GLUE_INFO_T prGlueInfo)

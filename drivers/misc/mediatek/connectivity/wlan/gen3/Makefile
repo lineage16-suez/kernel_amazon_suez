@@ -61,7 +61,7 @@ ccflags-y += -D_HIF_SDIO=1
 ccflags-y += -DDBG=0
 ccflags-y += -I$(src)/os -I$(src)/os/linux/include -I$(src)/os/linux/hif/sdio/include
 ccflags-y += -I$(src)/include -I$(src)/include/nic -I$(src)/include/mgmt
-#ccflags-$(CONFIG_ARCH_MT8173) += -I$(srctree)/drivers/misc/mediatek/base/power/mt8173 -DSPM_WAKEUP_EVENT_SUPPORT
+ccflags-$(CONFIG_ARCH_MT8173) += -I$(srctree)/drivers/misc/mediatek/base/power/mt8173 -DSPM_WAKEUP_EVENT_SUPPORT
 
 MODULE_NAME := wlan_gen3
 obj-$(CONFIG_MTK_COMBO_WIFI) += $(MODULE_NAME).o

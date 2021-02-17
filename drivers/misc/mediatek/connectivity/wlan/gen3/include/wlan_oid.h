@@ -1853,4 +1853,11 @@ wlanoidQueryDbgCntr(IN P_ADAPTER_T prAdapter,
 WLAN_STATUS
 wlanoidSetResetCounter(IN P_ADAPTER_T prAdapter,
 		IN PVOID pvSetBuffer, IN UINT_32 u4QueryBufferLen, OUT PUINT_32 pu4QueryInfoLen);
+
+WLAN_STATUS wlanoidNotifyTRxStats(IN P_ADAPTER_T prAdapter,
+	IN PVOID pvQueryBuffer, IN UINT_32 u4QueryBufferLen, OUT PUINT_32 pu4QueryInfoLen);
+
+WLAN_STATUS wlanoidNotifyChargeStatus(IN P_ADAPTER_T prAdapter,
+	IN PVOID pvQueryBuffer, IN UINT_32 u4QueryBufferLen, OUT PUINT_32 pu4QueryInfoLen);
+
 #endif /* _WLAN_OID_H */

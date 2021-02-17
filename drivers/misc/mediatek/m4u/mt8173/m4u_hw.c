@@ -1065,6 +1065,9 @@ static int _m4u_config_port(int port, int virt, int sec, int dis, int dir)
 
 	/* MMProfileLogEx(M4U_MMP_Events[M4U_MMP_CONFIG_PORT], MMProfileFlagStart, port, virt); */
 
+	if (!m4u_base)
+		return -1;
+
 	spin_lock(&gM4u_reg_lock);
 	/* Direction, one bit for each port, 1:-, 0:+ */
 	m4uHw_set_field_by_mask(m4u_base, REG_MMU_PFH_DIR(port),
@@ -1109,6 +1112,12 @@ static int _m4u_config_port(int port, int virt, int sec, int dis, int dir)
 			goto unlock_out;
 		}
 
+		if (!gPericfgBaseAddr) {
+			M4UMSG("warning gPericfgBaseAddr is %lu\n",
+				gPericfgBaseAddr);
+			ret = -1;
+			goto unlock_out;
+		}
 		larb_port = m4u_port_2_larb_port(port);
 
 		m4uHw_set_field_by_mask(gPericfgBaseAddr, REG_PERIAXI_BUS_CTL3,
