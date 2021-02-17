@@ -38,6 +38,8 @@ extern u32 spm_irq_7;
 #include <mach/mt_reg_base.h>
 #endif
 
+extern void __iomem *spm_eint_base;
+
 #include <mt-plat/sync_write.h>
 #include <mt-plat/mt_io.h>
 #include "mt_wakeup.h"

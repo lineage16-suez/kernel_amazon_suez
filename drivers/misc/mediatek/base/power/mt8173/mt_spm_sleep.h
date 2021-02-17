@@ -30,5 +30,5 @@ extern void spm_md32_sram_con(u32 value);
 
 extern void spm_output_sleep_option(void);
 extern void spm_suspend_init(void);
-
+extern bool spm_read_eint_status(unsigned int eint_num);
 #endif

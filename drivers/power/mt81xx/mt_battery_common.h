@@ -133,6 +133,28 @@ struct battery_common_data {
 	CHARGING_CONTROL charger;
 };
 
+struct fg_init_condition {
+	int dod0;
+	int dod1;
+	int soc;
+	int ui_soc;
+	int hw_ocv_init;
+	int hw_soc_init;
+	int sw_soc_init;
+	int rtc_soc_init;
+	int boot_reason;
+	int soc_gap;
+	long time_gap;
+};
+
+struct fg_error_detection {
+	bool is_detected;
+	struct timespec last_full_ts;
+	struct timespec detected_ts;
+	struct fg_init_condition data;
+};
+
+
 /*****************************************************************************
  *  Extern Variable
  ****************************************************************************/

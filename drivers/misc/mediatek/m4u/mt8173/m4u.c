@@ -561,12 +561,13 @@ struct sg_table *m4u_create_sgtable(unsigned long va, unsigned int size)
 		return ERR_PTR(-ENOMEM);
 	}
 
-	M4ULOG_MID("%s va=0x%lx, PAGE_OFFSET=0x%lx, VMALLOC_START=0x%lx, VMALLOC_END=0x%lx\n",
-		   __func__, va, PAGE_OFFSET, VMALLOC_START, VMALLOC_END);
+	M4ULOG_LOW(
+		"%s va=0x%lx, TASK_SIZE=0x%lx, lowmem:0x%lx~0x%p, VMALLOC 0x%lx~0x%lx\n",
+		__func__, va, TASK_SIZE, PAGE_OFFSET, high_memory,
+		VMALLOC_START, VMALLOC_END);
 
-	if (va < PAGE_OFFSET) {	/* from user space */
-		if (va >= VMALLOC_START && va <= VMALLOC_END) {	/* vmalloc */
-			M4ULOG_MID(" from user space vmalloc, va = 0x%lx", va);
+	if (va >= VMALLOC_START && va < VMALLOC_END) {
+		if (VMALLOC_END - va_align >= page_num * PAGE_SIZE) {
 			for_each_sg(table->sgl, sg, table->nents, i) {
 				page = vmalloc_to_page((void *)(va_align + i * PAGE_SIZE));
 				if (!page) {
@@ -577,31 +578,48 @@ struct sg_table *m4u_create_sgtable(unsigned long va, unsigned int size)
 				sg_set_page(sg, page, PAGE_SIZE, 0);
 			}
 		} else {
+			M4UMSG("%s fail, va=0x%lx+0x%x, vmalloc:0x%lx~0x%lx\n",
+				__func__, va, size, VMALLOC_START, VMALLOC_END);
+				goto err;
+		}
+	} else if (va < TASK_SIZE) {
+		if (TASK_SIZE - va_align >= page_num * PAGE_SIZE &&
+		    access_ok(VERIFY_READ, (void __user *)va, size)) {
 			ret = m4u_create_sgtable_user(va_align, table);
 			if (ret) {
-				M4UMSG("%s error va=0x%lx, size=%d\n", __func__, va, size);
+				M4UMSG("%s error va=0x%lx, size=%d\n",
+					__func__, va, size);
 				goto err;
 			}
+		} else {
+			M4UMSG(
+				"%s fail, TASK_SIZE=0x%lx, va=0x%lx, page num=%d\n",
+				__func__, TASK_SIZE, va_align, page_num);
+			goto err;
 		}
-	} else {/* from kernel space */
-		if (va >= VMALLOC_START && va <= VMALLOC_END) {/* vmalloc */
-			M4ULOG_MID(" from kernel space vmalloc, va = 0x%lx", va);
-			for_each_sg(table->sgl, sg, table->nents, i) {
-				page = vmalloc_to_page((void *)(va_align + i * PAGE_SIZE));
-				if (!page) {
-					M4UMSG("vmalloc_to_page fail, va=0x%lx\n",
-					       va_align + i * PAGE_SIZE);
-					goto err;
-				}
-				sg_set_page(sg, page, PAGE_SIZE, 0);
-			}
-		} else { /* kmalloc to-do: use one entry sgtable. */
+	} else if (va >= PAGE_OFFSET) {		/* from kernel space */
+		 if (va < (unsigned long)high_memory &&
+		    (unsigned long)high_memory - va_align >=
+		    page_num * PAGE_SIZE) {
 			for_each_sg(table->sgl, sg, table->nents, i) {
 				pa = virt_to_phys((void *)(va_align + i * PAGE_SIZE));
 				page = phys_to_page(pa);
 				sg_set_page(sg, page, PAGE_SIZE, 0);
 			}
+		} else {
+			M4UMSG(
+				"%s fail, va=0x%lx, page num=%d, lowmem:0x%lx~0x%lx\n",
+				__func__, va, page_num,	PAGE_OFFSET,
+				(unsigned long)high_memory);
+				goto err;
 		}
+	} else {
+		M4UMSG(
+			"%s fail, va=0x%lx, page num=%d, TASK_SIZE:0x%lx, lowmem:0x%lx~0x%lx, vmalloc:0x%lx~0x%lx\n",
+			__func__, va, page_num,	TASK_SIZE, PAGE_OFFSET,
+			(unsigned long)high_memory,
+			VMALLOC_START, VMALLOC_END);
+			goto err;
 	}
 
 	return table;
@@ -634,7 +652,10 @@ int m4u_alloc_mva(m4u_client_t *client, M4U_PORT_ID port,
 
 	MMProfileLogEx(M4U_MMP_Events[M4U_MMP_ALLOC_MVA], MMProfileFlagStart, va, size);
 
-
+	if (va == 0 && sg_table == NULL) {
+		ret = -EINVAL;
+		goto err;
+	}
 	if (va && sg_table) {
 		M4UMSG("%s, va or sg_table are both valid: va=0x%lx, sg=0x%p\n", __func__,
 		       va, sg_table);
@@ -1578,7 +1599,7 @@ static long MTK_M4U_ioctl(struct file *filp, unsigned int cmd, unsigned long arg
 	int ret = 0;
 	M4U_MOUDLE_STRUCT m4u_module;
 	M4U_PORT_STRUCT m4u_port;
-	M4U_PORT_ID PortID;
+	/* M4U_PORT_ID PortID; */
 	M4U_PORT_ID ModuleID;
 	M4U_CACHE_STRUCT m4u_cache_data;
 	M4U_DMA_STRUCT m4u_dma_data;
@@ -1685,7 +1706,7 @@ static long MTK_M4U_ioctl(struct file *filp, unsigned int cmd, unsigned long arg
 		ret = m4u_config_port(&m4u_port);
 		break;
 
-
+/*
 	case MTK_M4U_T_MONITOR_START:
 		ret = copy_from_user(&PortID, (void *)arg, sizeof(unsigned int));
 		if (ret) {
@@ -1704,7 +1725,7 @@ static long MTK_M4U_ioctl(struct file *filp, unsigned int cmd, unsigned long arg
 		}
 		ret = m4u_monitor_stop(m4u_port_2_m4u_id(PortID));
 		break;
-
+*/
 	case MTK_M4U_T_CACHE_FLUSH_ALL:
 		m4u_dma_cache_flush_all();
 		break;

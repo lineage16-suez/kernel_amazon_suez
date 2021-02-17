@@ -490,6 +490,26 @@ static long cmdq_driver_process_command_request(struct cmdqCommandStruct *pComma
 	return 0;
 }
 
+static long cmdq_verify_command(struct cmdqCommandStruct *command)
+{
+	/*
+	 * block size must grate than 0
+	 * block size must less than 64k
+	 * each cmdq instruction is 64bit,
+	 * block size must be multiple of 8
+	 */
+	if (command->blockSize < (2 * CMDQ_INST_SIZE)
+	   || (command->blockSize > CMDQ_MAX_COMMAND_SIZE)
+	   || (command->blockSize % 8 != 0)
+	   ) {
+		/* for userspace command: must ends with EOC+JMP. */
+		CMDQ_ERR_PRINT_LIMIT("Command block size invalid! size:%d\n",
+			command->blockSize);
+		return -EFAULT;
+	}
+
+    return 0;
+}
 static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long param)
 {
 	int mutex;
@@ -576,9 +596,10 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 		if (copy_from_user(&command, (void *)param, sizeof(struct cmdqCommandStruct)))
 			return -IOCTL_RET_COPY_EXEC_CMD_FROM_USER_FAIL;
 
-		if (command.regRequest.count > CMDQ_MAX_DUMP_REG_COUNT ||
-			!command.blockSize ||
-			command.blockSize > CMDQ_MAX_COMMAND_SIZE)
+		if (cmdq_verify_command(&command) != 0)
+			return -EINVAL;
+
+		if (command.regRequest.count > CMDQ_MAX_DUMP_REG_COUNT)
 			return -EINVAL;
 
 		if (cmdqCoreIsSuspend()) {
@@ -618,8 +639,8 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 		if (copy_from_user(&job, (void *)param, sizeof(struct cmdqJobStruct)))
 			return -IOCTL_RET_COPY_ASYNC_JOB_EXEC_FROM_USER_FAIL;
 
-		if (job.command.blockSize > CMDQ_MAX_COMMAND_SIZE)
-			return -EINVAL;
+		if (cmdq_verify_command(&(job.command)) != 0)
+			return -EFAULT;
 
 		if (cmdqCoreIsSuspend()) {
 			CMDQ_ERR_PRINT_LIMIT("CMDQ_IOCTL_ASYNC_JOB_EXEC suspended, return\n");
@@ -782,6 +803,14 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 			if (copy_from_user(&addrReq, (void *)param, sizeof(addrReq))) {
 				CMDQ_ERR_PRINT_LIMIT("CMDQ_IOCTL_ALLOC_WRITE_ADDRESS copy_from_user failed\n");
 				return -IOCTL_RET_COPY_ALLOC_WRITE_ADDR_FROM_USER_FAIL;
+			}
+
+			if (!addrReq.count
+			    || addrReq.count > CMDQ_MAX_WRITE_ADDR_COUNT) {
+				CMDQ_ERR_PRINT_LIMIT(
+				"Invalid alloc write addr count:%u\n",
+					addrReq.count);
+				return -EINVAL;
 			}
 
 			status = cmdqCoreAllocWriteAddress(addrReq.count, &paStart);
@@ -1111,7 +1140,7 @@ static int cmdq_probe(struct platform_device *pDevice)
 	/* ioctl access point (/dev/mtk_cmdq) */
 	gCmdqCDev = cdev_alloc();
 	gCmdqCDev->owner = THIS_MODULE;
-	gCmdqCDev->ops = &cmdqOP;
+	gCmdqCDev->ops = NULL;
 
 	status = cdev_add(gCmdqCDev, gCmdqDevNo, 1);
 

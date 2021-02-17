@@ -1665,7 +1665,9 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 		prAdapter->fgEnCtiaPowerMode = FALSE;
 
 #endif
-
+#if CFG_SUPPORT_WAKEUP_REASON_DEBUG
+		prAdapter->ulSuspendFlag = 0;
+#endif
 		/* MGMT Initialization */
 		nicInitMGMT(prAdapter, prRegInfo);
 
@@ -7401,11 +7403,12 @@ WLAN_STATUS wlanTriggerStatsLog(IN P_ADAPTER_T prAdapter, IN UINT_32 u4DurationI
 WLAN_STATUS
 wlanDhcpTxDone(IN P_ADAPTER_T prAdapter, IN P_MSDU_INFO_T prMsduInfo, IN ENUM_TX_RESULT_CODE_T rTxDoneStatus)
 {
-	DBGLOG(SW4, INFO, "DHCP PKT TX DONE WIDX:PID[%u:%u] Status[%u]\n",
-			prMsduInfo->ucWlanIndex, prMsduInfo->ucPID, rTxDoneStatus);
+	DBGLOG(TX, STATE, "DHCP PKT TX DONE WIDX:PID[%u:%u] Status[%u]\n",
+		   prMsduInfo->ucWlanIndex, prMsduInfo->ucPID, rTxDoneStatus);
 
 	return WLAN_STATUS_SUCCESS;
 }
+
 
 WLAN_STATUS wlanArpTxDone(IN P_ADAPTER_T prAdapter, IN P_MSDU_INFO_T prMsduInfo, IN ENUM_TX_RESULT_CODE_T rTxDoneStatus)
 {

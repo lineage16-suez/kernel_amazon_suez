@@ -852,7 +852,14 @@
 #if CFG_SUPPORT_AGPS_ASSIST
 #include <net/netlink.h>
 #endif
-
+#if CFG_SUPPORT_WAKEUP_REASON_DEBUG
+#include <mt_sleep.h>
+#endif
+#include <linux/fdtable.h>
+#include <linux/fs.h>
+#include <linux/mm.h>
+#include <linux/netfilter/x_tables.h>
+#include <uapi/linux/netfilter/xt_socket.h>
 /*******************************************************************************
 *                              C O N S T A N T S
 ********************************************************************************
@@ -893,6 +900,7 @@ static UINT_32 pvIoBufferUsage;
 *                              F U N C T I O N S
 ********************************************************************************
 */
+
 #if CFG_ENABLE_FW_DOWNLOAD
 
 static struct file *filp;
@@ -1622,7 +1630,11 @@ WLAN_STATUS kalRxIndicateOnePkt(IN P_GLUE_INFO_T prGlueInfo, IN PVOID pvPkt)
 		DBGLOG(RX, TRACE, "prSkb->head = 0x%p, prSkb->cb = 0x%lx\n", pu4Head, u4HeadValue);
 	} while (0);
 #endif
+	if (KAL_IS_WAKEUP_PKT(prSkb))
+		glNotifyWakeups(prSkb, WAKE_TYPE_IP);
 
+	if (glIsDataStatEnabled() && !kalTRxStatsPaused())
+		kalStatTRxPkts(prGlueInfo, prSkb, FALSE);
 #if 1
 	prNetDev = (struct net_device *)wlanGetNetInterfaceByBssIdx(prGlueInfo, GLUE_GET_PKT_BSS_IDX(prSkb));
 	if (!prNetDev)
@@ -1856,7 +1868,11 @@ kalIndicateStatusAndComplete(IN P_GLUE_INFO_T prGlueInfo, IN WLAN_STATUS eStatus
 #endif
 
 		netif_carrier_off(prGlueInfo->prDevHandler);
-
+		if (prGlueInfo->eParamMediaStateIndicated != PARAM_MEDIA_STATE_DISCONNECTED) {
+			glNotifyAppTxRx(prGlueInfo, "disconnect");
+			kalResetSockAppMapCache(prGlueInfo);
+			kalResetTRxStats(prGlueInfo);
+		}
 		if (prGlueInfo->fgIsRegistered == TRUE
 		    && eStatus == WLAN_STATUS_MEDIA_DISCONNECT) {
 			P_BSS_INFO_T prBssInfo = prGlueInfo->prAdapter->prAisBssInfo;
@@ -2388,7 +2404,7 @@ kalIPv4FrameClassifier(IN P_GLUE_INFO_T prGlueInfo,
 
 				WLAN_GET_FIELD_BE32(&prBootp->u4TransId, &u4Xid);
 
-				DBGLOG(TX, INFO, "DHCP PKT[0x%p] XID[0x%08x] OPT[%u] TYPE[%u]\n",
+				DBGLOG(TX, STATE, "DHCP PKT[0x%p] XID[0x%08x] OPT[%u] TYPE[%u]\n",
 						   prPacket, u4Xid, prBootp->aucOptions[4], prBootp->aucOptions[6]);
 
 				prTxPktInfo->u2Flag |= BIT(ENUM_PKT_DHCP);
@@ -2971,7 +2987,6 @@ UINT_32 kalProcessTxPacket(P_GLUE_INFO_T prGlueInfo, struct sk_buff *prSkb)
 		DBGLOG(INIT, WARN, "prSkb == NULL in tx\n");
 		return u4Status;
 	}
-
 	/* Handle security frame */
 	if (GLUE_TEST_PKT_FLAG(prSkb, ENUM_PKT_1X)) {
 		if (wlanProcessSecurityFrame(prGlueInfo->prAdapter, (P_NATIVE_PACKET) prSkb)) {
@@ -5355,6 +5370,48 @@ UINT_64 kalGetBootTime(void)
 	return bootTime;
 }
 
+#if CFG_SUPPORT_WAKEUP_REASON_DEBUG
+/* if SPM is not implement this function, we will use this default one */
+wake_reason_t __weak slp_get_wake_reason(VOID)
+{
+	DBGLOG(INIT, WARN, "SPM didn't define this function!\n");
+	return WR_NONE;
+}
+/* if SPM is not implement this function, we will use this default one */
+bool __weak spm_read_eint_status(UINT_32 u4EintNum)
+{
+	DBGLOG(INIT, WARN, "SPM didn't define this function!\n");
+	return FALSE;
+}
+static inline BOOLEAN spm_check_wakesrc(VOID)
+{
+	return spm_read_eint_status(2);
+}
+BOOLEAN kalIsWakeupByWlan(P_ADAPTER_T  prAdapter)
+{
+	/*
+	 * SUSPEND_FLAG_FOR_WAKEUP_REASON is set means system has suspended, but may be failed
+	 * duo to some driver suspend failed. so we need help of function slp_get_wake_reason
+	 */
+	if (test_and_clear_bit(SUSPEND_FLAG_FOR_WAKEUP_REASON, &prAdapter->ulSuspendFlag) == 0) {
+		return FALSE;
+	}
+	/*
+	 * if slp_get_wake_reason or spm_get_last_wakeup_src is NULL, it means SPM module didn't implement
+	 * it. then we should return FALSE always. otherwise,  if slp_get_wake_reason returns WR_WAKE_SRC,
+	 * then it means the host is suspend successfully.
+	 */
+	if (slp_get_wake_reason() != WR_WAKE_SRC) {
+		return FALSE;
+	}
+	/*
+	 * spm_get_last_wakeup_src will returns the last wakeup source,
+	 * WAKE_SRC_CONN2AP is connsys
+	 */
+	return spm_check_wakesrc();
+}
+#endif
+
 #if CFG_SUPPORT_SCAN_CHANNEL_REQUEST
 UINT_32 kalGetScanRequestChannelNum(IN P_GLUE_INFO_T prGlueInfo)
 {
@@ -5416,3 +5473,617 @@ WLAN_STATUS kalGetScanRequestChannelList(IN P_GLUE_INFO_T prGlueInfo,
 } /* kalGetScanRequestChannelList */
 #endif
 
+int kalIsFileOpenedByTask(struct task_struct *task, struct file *file)
+{
+	struct files_struct *files;
+	UINT_32 fd;
+	INT_32 ret = -1;
+
+	files = get_files_struct(task);
+	if (!files)
+		return ret;
+
+	for (fd = 3; fd < files_fdtable(files)->max_fds; fd++) {
+		if (fcheck_files(files, fd) == file) {
+			ret = 0;
+			break;
+		}
+	}
+	put_files_struct(files);
+	return ret;
+}
+
+static BOOLEAN kalIsIpPortEqual(UINT_16 u2LLport, UINT_16 u2LRport, PUINT_32 pu4LIPv6,
+	UINT_16 u2RLport, UINT_16 u2RRport, PUINT_32 pu4RIPv6)
+{
+	UINT_32 au4ZeroIP[4] = {0};
+
+	return (u2LLport == u2RLport || !u2LLport || !u2RLport) &&
+		(u2LRport == u2RRport || !u2LRport || !u2RRport) &&
+		(!kalMemCmp(pu4RIPv6, pu4LIPv6, 16) ||
+		!kalMemCmp(pu4RIPv6, au4ZeroIP, 16) ||
+		!kalMemCmp(pu4LIPv6, au4ZeroIP, 16));
+}
+
+VOID kalScheduleCommonWork(struct DRV_COMMON_WORK_T *prDrvWork, struct DRV_COMMON_WORK_FUNC_T *prWork)
+{
+	ULONG ulFlags;
+
+	spin_lock_irqsave(&prDrvWork->rWorkFuncQueLock, ulFlags);
+	QUEUE_INSERT_TAIL(&prDrvWork->rWorkFuncQue, &prWork->rQueEntry);
+	spin_unlock_irqrestore(&prDrvWork->rWorkFuncQueLock, ulFlags);
+	schedule_work(&prDrvWork->rWork);
+}
+
+static UINT_16 kalGetEthType(struct sk_buff *prSkb)
+{
+	return (prSkb->data[ETH_TYPE_LEN_OFFSET] << 8) | (prSkb->data[ETH_TYPE_LEN_OFFSET + 1]);
+}
+
+static VOID kalGetIP(struct sk_buff *prSkb, PUINT_32 pu4IP, BOOLEAN fgSrc)
+{
+	UINT_16 u2EthType = kalGetEthType(prSkb);
+	PUINT_8 pucIP;
+
+	kalMemZero(pu4IP, 16);
+	if (u2EthType == ETH_P_IPV4) {
+		pucIP = &prSkb->data[ETH_HLEN + 12];
+		if (!fgSrc)
+			pucIP += 4;
+		kalMemCopy(pu4IP, pucIP, 4);
+	} else if (u2EthType == ETH_P_IPV6) {
+		pucIP = &prSkb->data[ETH_HLEN + 8];
+		if (!fgSrc)
+			pucIP += 16;
+		kalMemCopy(pu4IP, pucIP, 16);
+	}
+}
+
+static UINT_16 kalGetPort(struct sk_buff *prSkb, BOOLEAN fgSrc)
+{
+	UINT_16 u2EthType = kalGetEthType(prSkb);
+	PUINT_8 pucPort;
+
+	if (u2EthType == ETH_P_IPV4)
+		pucPort = &prSkb->data[ETH_HLEN + 20];
+	else if (u2EthType == ETH_P_IPV6)
+		pucPort = &prSkb->data[ETH_HLEN + 40];
+	else
+		return 0;
+
+	if (!fgSrc)
+		pucPort += 2;
+
+	return (pucPort[0] << 8) | pucPort[1];
+}
+
+struct task_struct *kalFindTaskBySocket(struct socket *prSocket)
+{
+	struct task_struct *task;
+	struct task_struct *found = NULL;
+
+	if (!prSocket || !prSocket->file)
+		return NULL;
+
+	rcu_read_lock();
+	for_each_process(task) {
+		if (!kalIsFileOpenedByTask(task, prSocket->file)) {
+			found = task;
+			break;
+		}
+	}
+	rcu_read_unlock();
+	return found;
+}
+
+struct SOCK_APP_MAP_T *kalBuildAppSockMap(P_GLUE_INFO_T prGlueInfo, struct sk_buff *prSkb, BOOLEAN fgTx)
+{
+#define VALID_SOCKET(_sk) (sk && sk_fullsock(sk) && sk->sk_state != TCP_TIME_WAIT)
+	struct LINK_MGMT *prAppSockMap = &prGlueInfo->rSockAppMapCache;
+	struct SOCK_APP_MAP_T *prAppSock = NULL;
+	struct SOCK_APP_MAP_T *prAppSockNext = NULL;
+	struct task_struct *task;
+	OS_SYSTIME rCurrentTime = kalGetTimeTick();
+	UINT_32 au4RIP[4] = {0};
+	UINT_16 u2Rport;
+	UINT_16 u2Lport;
+	struct sock *sk;
+	UINT_16 u2EthType;
+
+	KAL_SPIN_LOCK_DECLARATION();
+
+	if (!prSkb)
+		return NULL;
+
+	kalGetIP(prSkb, au4RIP, !fgTx);
+	u2Rport = kalGetPort(prSkb, !fgTx);
+	u2Lport = kalGetPort(prSkb, fgTx);
+	KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_SOCK_APP_MAP);
+	LINK_FOR_EACH_ENTRY_SAFE(prAppSock, prAppSockNext, &prAppSockMap->rUsingLink,
+		rLinkEntry, struct SOCK_APP_MAP_T) {
+		if (CHECK_FOR_TIMEOUT(rCurrentTime, prAppSock->rTimestamp, SEC_TO_SYSTIME(600))) {
+			LINK_MGMT_RETURN_ENTRY(prAppSockMap, prAppSock);
+			continue;
+		}
+		if (kalIsIpPortEqual(prAppSock->u2Lport, prAppSock->u2Rport, prAppSock->au4RIPv6,
+			u2Lport, u2Rport, au4RIP)) {
+			KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_SOCK_APP_MAP);
+			return prAppSock;
+		}
+	}
+	KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_SOCK_APP_MAP);
+	u2EthType = kalGetEthType(prSkb);
+	sk = prSkb->sk;
+	if (!VALID_SOCKET(sk)) {
+		struct xt_action_param xt_param = {.in = prGlueInfo->prDevHandler};
+
+		if (u2EthType == ETH_P_IPV4)
+			sk = xt_socket_get4_sk(prSkb, &xt_param);
+		else if (u2EthType == ETH_P_IPV6)
+			sk = xt_socket_get6_sk(prSkb, &xt_param);
+		else
+			goto invalid_sk;
+
+		if (!VALID_SOCKET(sk)) {
+invalid_sk:
+			DBGLOG(INIT, ERROR, "RIP %pI6c, Rport %d, Lport %d\n", au4RIP, u2Rport, u2Lport);
+			return NULL;
+		}
+	}
+
+	task = kalFindTaskBySocket(sk->sk_socket);
+	if (!task) {
+		DBGLOG(INIT, ERROR, "No task was found for inode %lu, RIP %pI6c, Rport %d, Lport %d\n",
+			sock_i_ino(sk), (PUINT_8)&au4RIP[0], u2Rport, u2Lport);
+		return NULL;
+	}
+	KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_SOCK_APP_MAP);
+	LINK_REMOVE_HEAD(&prAppSockMap->rFreeLink, prAppSock, struct SOCK_APP_MAP_T*);
+	if (!prAppSock) {
+		KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_SOCK_APP_MAP);
+		prAppSock = kalMemAlloc(sizeof(struct SOCK_APP_MAP_T), VIR_MEM_TYPE);
+		if (!prAppSock) {
+			DBGLOG(INIT, ERROR, "No memory for sock map\n");
+			return NULL;
+		}
+		KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_SOCK_APP_MAP);
+	}
+	LINK_INSERT_TAIL(&prAppSockMap->rUsingLink, &prAppSock->rLinkEntry);
+	kalMemCopy(prAppSock->au4RIPv6, au4RIP, 16);
+	prAppSock->u2Lport = u2Lport;
+	prAppSock->u2Rport = u2Rport;
+	prAppSock->rTimestamp = rCurrentTime;
+	prAppSock->prAppStat = NULL;
+	prAppSock->task = task;
+	KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_SOCK_APP_MAP);
+	return prAppSock;
+}
+
+static VOID kalReadTaskName(struct task_struct *task, PCHAR pcName, UINT_8 ucNameSize)
+{
+	char aucBuf[128] = {0};
+	char *pucBuf = &aucBuf[0];
+	struct mm_struct *mm;
+	unsigned long count = 127;
+	unsigned long arg_start, arg_end, env_start, env_end;
+	unsigned long len1, len2, len;
+	unsigned long p;
+	char c;
+	unsigned char fgDone = 0;
+#define READ_VM() \
+	do {\
+		while (count > 0 && len > 0 && !fgDone) {\
+			unsigned int _count, l;\
+			int nr_read;\
+\
+			_count = min(count, len);\
+			nr_read = access_remote_vm(mm, p, pucBuf, _count, 0);\
+			if (nr_read <= 0)\
+				break;\
+			l = strnlen(pucBuf, nr_read);\
+			if (l < nr_read) {\
+				nr_read = l;\
+				fgDone = 1;\
+			}\
+			p	+= nr_read;\
+			len -= nr_read;\
+			pucBuf += nr_read;\
+			count	-= nr_read;\
+		}\
+	} while (0)
+
+	mm = get_task_mm(task);
+	if (!mm)
+		goto use_comm;
+	/* Check if process spawned far enough to have cmdline. */
+	if (!mm->env_end) {
+		goto use_comm;
+	}
+
+	down_read(&mm->mmap_sem);
+	arg_start = mm->arg_start;
+	arg_end = mm->arg_end;
+	env_start = mm->env_start;
+	env_end = mm->env_end;
+	up_read(&mm->mmap_sem);
+
+	BUG_ON(arg_start > arg_end);
+	BUG_ON(env_start > env_end);
+
+	len1 = arg_end - arg_start;
+	len2 = env_end - env_start;
+
+	/* Empty ARGV. */
+	if (len1 == 0) {
+		pr_info("argv length is 0\n");
+		goto use_comm;
+	}
+	/* Read last byte of argv */
+	if (access_remote_vm(mm, arg_end - 1, &c, 1, 0) <= 0)
+		goto use_comm;
+
+	/* Read argv */
+	p = arg_start;
+	len = len1;
+	READ_VM();
+	/* Read Env args */
+	if (c != '\0' && len2 > 0 && !fgDone) {
+		pr_info("read env\n");
+		p = env_start;
+		len = len2;
+		READ_VM();
+	}
+
+use_comm:
+	if (mm)
+		mmput(mm);
+
+	if (pucBuf != &aucBuf[0]) {
+		pucBuf = strchr(aucBuf, ' ');
+		if (pucBuf)
+			*pucBuf = '\0';
+		pucBuf = strrchr(aucBuf, '/');
+		if (!pucBuf)
+			pucBuf = &aucBuf[0];
+		else
+			pucBuf++;
+		strncpy(pcName, pucBuf, ucNameSize);
+	} else {
+		pr_info("No cmdline, using comm %s, %d\n", task->comm, aucBuf[0]);
+		strncpy(pcName, task->comm, ucNameSize);
+	}
+}
+
+static BOOLEAN kalIsSpecialProtoPort(UINT_16 u2Port)
+{
+	UINT_16 au2SpecialPort[] = {137, 138, 139,/*NetBios*/ 53,/*dns*/ 67, 68,/* dhcp */ 161,/*SNMP*/};
+	UINT_16 u2Idx = 0;
+
+	for (u2Idx = 0; u2Idx < sizeof(au2SpecialPort) / sizeof(UINT_16); u2Idx++) {
+		if (au2SpecialPort[u2Idx] == u2Port)
+			return TRUE;
+	}
+	return FALSE;
+}
+
+struct APP_TX_RX_STAT_T *kalAppTRxStat(P_GLUE_INFO_T prGlueInfo, BOOLEAN fgTx,	struct sk_buff *prSkb)
+{
+	CHAR acAppName[64];
+	struct SOCK_APP_MAP_T *prSockAppMap;
+	struct APP_TX_RX_STAT_T *prAppStat;
+	struct LINK_MGMT *prAppStatLink;
+	KAL_SPIN_LOCK_DECLARATION();
+
+	ASSERT(prGlueInfo);
+
+	prSockAppMap = kalBuildAppSockMap(prGlueInfo, prSkb, fgTx);
+	if (!prSockAppMap) {
+		DBGLOG(INIT, ERROR, "Failed to build App Sock Map\n");
+		return NULL;
+	}
+
+	KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_APP_TRX_STAT);
+	prAppStat = prSockAppMap->prAppStat;
+	if (prAppStat) {
+		/* No need to check task here, it is rare that different task uses same IP, Rport and Lport set.
+		** And we'll invalidate Sock Info cache each time need to reload it.
+		*/
+		if (fgTx)
+			prAppStat->u4TxStat++;
+		else
+			prAppStat->u4RxStat++;
+		KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_APP_TRX_STAT);
+		DBGLOG(INIT, TRACE, "found task in quick path, %s Rx %u pkts, TX %u pkts\n",
+			prAppStat->acAppName, prAppStat->u4RxStat, prAppStat->u4TxStat);
+		return prAppStat;
+	}
+	KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_APP_TRX_STAT);
+	kalReadTaskName(prSockAppMap->task, acAppName, sizeof(acAppName));
+
+	/* Search in APP Stat link to check if it is already in statistics */
+	prAppStatLink = &prGlueInfo->rAppTxRxStat;
+	KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_APP_TRX_STAT);
+	LINK_FOR_EACH_ENTRY(prAppStat, &prAppStatLink->rUsingLink, rLinkEntry, struct APP_TX_RX_STAT_T) {
+		if (kalStrnCmp(prAppStat->acAppName, acAppName, sizeof(acAppName)))
+			continue;
+
+		prSockAppMap->prAppStat = prAppStat;
+		if (fgTx)
+			prAppStat->u4TxStat++;
+		else
+			prAppStat->u4RxStat++;
+
+		KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_APP_TRX_STAT);
+		DBGLOG(INIT, TRACE, "%s RX %u pkts, TX %u pkts\n", acAppName, prAppStat->u4RxStat, prAppStat->u4TxStat);
+		return prAppStat;
+	}
+
+	/* Allocate a new APP Stat entry */
+	LINK_REMOVE_HEAD(&prAppStatLink->rFreeLink, prAppStat, struct APP_TX_RX_STAT_T *);
+	if (!prAppStat) {
+		KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_APP_TRX_STAT);
+		prAppStat = kalMemAlloc(sizeof(struct APP_TX_RX_STAT_T), VIR_MEM_TYPE);
+		if (!prAppStat) {
+			KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_SOCK_APP_MAP);
+			LINK_MGMT_RETURN_ENTRY(&prGlueInfo->rSockAppMapCache, prSockAppMap);
+			KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_SOCK_APP_MAP);
+			DBGLOG(INIT, ERROR, "No memory for APP stat\n");
+			return NULL;
+		}
+		KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_APP_TRX_STAT);
+	}
+	LINK_INSERT_TAIL(&prAppStatLink->rUsingLink, &prAppStat->rLinkEntry);
+	prSockAppMap->prAppStat = prAppStat;
+	kalStrnCpy(prAppStat->acAppName, acAppName, sizeof(prAppStat->acAppName));
+	if (fgTx) {
+		prAppStat->u4RxStat = 0;
+		prAppStat->u4TxStat = 1;
+	} else {
+		prAppStat->u4TxStat = 0;
+		prAppStat->u4RxStat = 1;
+	}
+	KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_APP_TRX_STAT);
+
+	return prAppStat;
+}
+
+/* No need lock because it is executed before wlan driver thread */
+VOID kalTrafficStatInit(P_GLUE_INFO_T prGlueInfo)
+{
+	ASSERT(prGlueInfo);
+	LINK_MGMT_INIT(&prGlueInfo->rSockAppMapCache);
+	LINK_MGMT_INIT(&prGlueInfo->rAppTxRxStat);
+	LINK_MGMT_INIT(&prGlueInfo->rOtherDataStat);
+	kalMemZero(prGlueInfo->arDrvPktStat, sizeof(prGlueInfo->arDrvPktStat));
+}
+
+/* No need lock because it is executed after wlan driver thread dead */
+VOID kalTrafficStatUnInit(P_GLUE_INFO_T prGlueInfo)
+{
+	ASSERT(prGlueInfo);
+	/* Only reset App Sock Map cache here to ensure all Sock Info can be returned */
+	kalResetSockAppMapCache(prGlueInfo);
+	LINK_MGMT_UNINIT(&prGlueInfo->rSockAppMapCache, struct SOCK_APP_MAP_T, VIR_MEM_TYPE);
+	LINK_MGMT_UNINIT(&prGlueInfo->rAppTxRxStat, struct APP_TX_RX_STAT_T, VIR_MEM_TYPE);
+	LINK_MGMT_UNINIT(&prGlueInfo->rOtherDataStat, struct OTHER_DATA_STAT_T, VIR_MEM_TYPE);
+}
+
+VOID kalResetSockAppMapCache(P_GLUE_INFO_T prGlueInfo)
+{
+	struct LINK_MGMT *prSockAppMapCache;
+	struct SOCK_APP_MAP_T *prSockAppMap = NULL;
+	KAL_SPIN_LOCK_DECLARATION();
+
+	ASSERT(prGlueInfo);
+	prSockAppMapCache = &prGlueInfo->rSockAppMapCache;
+	KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_SOCK_APP_MAP);
+	while (prSockAppMapCache->rUsingLink.u4NumElem > 0) {
+		LINK_REMOVE_HEAD(&prSockAppMapCache->rUsingLink, prSockAppMap, struct SOCK_APP_MAP_T *);
+		LINK_INSERT_TAIL(&prSockAppMapCache->rFreeLink, &prSockAppMap->rLinkEntry);
+	}
+	KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_SOCK_APP_MAP);
+	DBGLOG(INIT, TRACE, "App Sock Map cache length %u\n", prSockAppMapCache->rFreeLink.u4NumElem);
+}
+
+VOID kalResetTRxStats(P_GLUE_INFO_T prGlueInfo)
+{
+	struct LINK_MGMT *prStatLink;
+	struct APP_TX_RX_STAT_T *prAppStat = NULL;
+	struct OTHER_DATA_STAT_T *prOtherDataStat = NULL;
+	KAL_SPIN_LOCK_DECLARATION();
+
+	ASSERT(prGlueInfo);
+	prStatLink = &prGlueInfo->rAppTxRxStat;
+	KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_APP_TRX_STAT);
+	while (prStatLink->rUsingLink.u4NumElem > 0) {
+		LINK_REMOVE_HEAD(&prStatLink->rUsingLink, prAppStat, struct APP_TX_RX_STAT_T *);
+		LINK_INSERT_TAIL(&prStatLink->rFreeLink, &prAppStat->rLinkEntry);
+	}
+	KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_APP_TRX_STAT);
+	DBGLOG(INIT, TRACE, "App Stat cache length %u\n", prStatLink->rFreeLink.u4NumElem);
+
+	prStatLink = &prGlueInfo->rOtherDataStat;
+	KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_OTHER_DATA_STAT);
+	while (prStatLink->rUsingLink.u4NumElem > 0) {
+		LINK_REMOVE_HEAD(&prStatLink->rUsingLink, prOtherDataStat, struct OTHER_DATA_STAT_T *);
+		LINK_INSERT_TAIL(&prStatLink->rFreeLink, &prOtherDataStat->rLinkEntry);
+	}
+	KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_OTHER_DATA_STAT);
+
+	KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_DRV_PKT_STAT);
+	kalMemZero(prGlueInfo->arDrvPktStat, sizeof(prGlueInfo->arDrvPktStat));
+	KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_DRV_PKT_STAT);
+}
+
+static VOID kalStatTcpUdp(P_GLUE_INFO_T prGlueInfo, BOOLEAN fgTx, struct sk_buff *prSkb,
+	UINT_16 u2EthType, UINT_8 ucIpProto)
+{
+	UINT_16 u2Rport = 0;
+	UINT_16 u2Lport = 0;
+	UINT_32 au4RIP[4];
+	struct APP_TX_RX_STAT_T *prAppStat;
+	static UINT_32 au4LastRIPv6[4];
+	static UINT_16 u2LastRPort;
+	static UINT_16 u2LastLPort;
+	static struct APP_TX_RX_STAT_T *prLastAppStat;
+
+	KAL_SPIN_LOCK_DECLARATION();
+
+	u2Rport = kalGetPort(prSkb, !fgTx);
+	u2Lport = kalGetPort(prSkb, fgTx);
+	kalGetIP(prSkb, au4RIP, !fgTx);
+	if (kalIsSpecialProtoPort(u2Lport) || kalIsSpecialProtoPort(u2Rport))
+		goto STAT_OTHERS;
+
+	KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_APP_TRX_STAT);
+	if ((u2Lport == u2LastLPort) && (u2Rport == u2LastRPort) &&
+	    !kalMemCmp(au4RIP, au4LastRIPv6, 16) && prLastAppStat) {
+		if (fgTx)
+			prLastAppStat->u4TxStat++;
+		else
+			prLastAppStat->u4RxStat++;
+
+		KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_APP_TRX_STAT);
+		return;
+	}
+	KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_APP_TRX_STAT);
+	prAppStat = kalAppTRxStat(prGlueInfo, fgTx, prSkb);
+	if (!prAppStat) {
+STAT_OTHERS:
+		kalStatOtherPkts(prGlueInfo, fgTx, u2EthType, ucIpProto);
+		return;
+	}
+	KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_APP_TRX_STAT);
+	prLastAppStat = prAppStat;
+	kalMemCopy(au4LastRIPv6, au4RIP, sizeof(au4LastRIPv6));
+	u2LastRPort = u2Rport;
+	u2LastLPort = u2Lport;
+	KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_APP_TRX_STAT);
+}
+
+BOOLEAN kalGetAppNameByEth(P_GLUE_INFO_T prGlueInfo, struct sk_buff *prSkb, PUINT_8 pcAppName, UINT_32 u4NameSize)
+{
+	struct SOCK_APP_MAP_T *prSockAppMap;
+
+	if (!prGlueInfo)
+		return FALSE;
+
+	prSockAppMap = kalBuildAppSockMap(prGlueInfo, prSkb, FALSE);
+	if (!prSockAppMap)
+		return FALSE;
+
+	kalReadTaskName(prSockAppMap->task, pcAppName, u4NameSize);
+	return TRUE;
+}
+
+
+BOOLEAN kalWakeupFromSleep(VOID)
+{
+	return slp_get_wake_reason() == WR_WAKE_SRC;
+}
+
+VOID kalStatDrvPkts(P_GLUE_INFO_T prGlueInfo, BOOLEAN fgTx, enum ENUM_DRV_PKT_TYPE eType, UINT_8 ucIDSubType)
+{
+	struct DRV_PKT_STAT_T *prStat = NULL;
+	KAL_SPIN_LOCK_DECLARATION();
+
+	ASSERT(prGlueInfo);
+
+	if (eType >= DRV_PKT_NUM) {
+		DBGLOG(INIT, ERROR, "Unsupported pkt type %d\n", eType);
+		return;
+	}
+	prStat = &prGlueInfo->arDrvPktStat[eType];
+
+	if (eType != DRV_PKT_MGMT) {
+		KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_DRV_PKT_STAT);
+		prStat->aulDrvPktMaps[ucIDSubType >> 6] |= (1 << (ucIDSubType & 0x3f));
+		if (fgTx)
+			prStat->u4TxStat++;
+		else
+			prStat->u4RxStat++;
+
+		KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_DRV_PKT_STAT);
+	} else if (ucIDSubType <= MAX_NUM_OF_FC_SUBTYPES) {
+		KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_DRV_PKT_STAT);
+		if (fgTx) {
+			/* put TX MGMT bit map to first UINT_64 variable, valid  */
+			prStat->aulDrvPktMaps[0] |= (1 << ucIDSubType);
+			prStat->u4TxStat++;
+		} else {
+			/* put RX MGMT bit map to second UINT_64 variable */
+			prStat->aulDrvPktMaps[1] |= (1 << ucIDSubType);
+			prStat->u4RxStat++;
+		}
+		KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_DRV_PKT_STAT);
+	} else
+		DBGLOG(INIT, ERROR, "invalid type %d or id value %d\n", eType, ucIDSubType);
+}
+
+VOID kalStatOtherPkts(P_GLUE_INFO_T prGlueInfo, BOOLEAN fgTx, UINT_16 u2EthType, UINT_8 ucIpProto)
+{
+	struct OTHER_DATA_STAT_T *prStat = NULL;
+	P_LINK_T prStatLink;
+	KAL_SPIN_LOCK_DECLARATION();
+
+	ASSERT(prGlueInfo);
+	prStatLink = &prGlueInfo->rOtherDataStat.rUsingLink;
+
+	KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_OTHER_DATA_STAT);
+	LINK_FOR_EACH_ENTRY(prStat, prStatLink, rLinkEntry, struct OTHER_DATA_STAT_T) {
+		if (prStat->ucIpProto == ucIpProto ||
+		    (prStat->u2EthType == u2EthType && u2EthType != ETH_P_IPV4 && u2EthType != ETH_P_IPV6)) {
+			break;
+		}
+	}
+	if (&prStat->rLinkEntry == (P_LINK_ENTRY_T)prStatLink) {
+		LINK_REMOVE_HEAD(&prGlueInfo->rOtherDataStat.rFreeLink, prStat, struct OTHER_DATA_STAT_T *);
+		if (!prStat) {
+			KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_OTHER_DATA_STAT);
+			prStat = kalMemAlloc(sizeof(struct OTHER_DATA_STAT_T), VIR_MEM_TYPE);
+			if (!prStat) {
+				DBGLOG(INIT, ERROR, "No memory for eth %d, ip proto %d\n", u2EthType, ucIpProto);
+				return;
+			}
+			KAL_ACQUIRE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_OTHER_DATA_STAT);
+		}
+		LINK_INSERT_TAIL(prStatLink, &prStat->rLinkEntry);
+		prStat->u2EthType = u2EthType;
+		prStat->ucIpProto = ucIpProto;
+		prStat->u4TxStat = prStat->u4RxStat = 0;
+	}
+	if (fgTx)
+		prStat->u4TxStat++;
+	else
+		prStat->u4RxStat++;
+
+	KAL_RELEASE_SPIN_LOCK(prGlueInfo->prAdapter, SPIN_LOCK_OTHER_DATA_STAT);
+}
+
+VOID kalStatTRxPkts(P_GLUE_INFO_T prGlueInfo, struct sk_buff *prSkb, BOOLEAN fgTx)
+{
+	UINT_16 u2EthType;
+	PUINT_8 pucIp;
+	UINT_8 ucIpProto = 0;
+
+	ASSERT(prGlueInfo && prSkb);
+	pucIp = &prSkb->data[ETH_HLEN];
+	u2EthType = kalGetEthType(prSkb);
+
+	if (u2EthType != ETH_P_IPV4 && u2EthType != ETH_P_IPV6) {
+		kalStatOtherPkts(prGlueInfo, fgTx, u2EthType, 0);
+		return;
+	}
+
+	ucIpProto = (u2EthType == ETH_P_IPV4) ? pucIp[9] : pucIp[6];
+	if (ucIpProto == IP_PROTOCOL_TCP || ucIpProto == IP_PROTOCOL_UDP)
+		kalStatTcpUdp(prGlueInfo, fgTx, prSkb, u2EthType, ucIpProto);
+	else
+		kalStatOtherPkts(prGlueInfo, fgTx, u2EthType, ucIpProto);
+}
+
+BOOLEAN kalTRxStatsPaused(VOID) {
+	P_GLUE_INFO_T prGlueInfo = wlanGetGlueInfo();
+
+	return !prGlueInfo->fgIsInSuspendMode;
+}

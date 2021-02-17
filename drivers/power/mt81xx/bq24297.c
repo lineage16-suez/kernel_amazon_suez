@@ -1105,8 +1105,7 @@ void bq24297_dump_register(void)
 
 	for (i = 0; i < bq24297_REG_NUM; i++) {
 		bq24297_read_byte(i, &bq24297_reg[i]);
-		battery_log(BAT_LOG_FULL,
-			    "[bq24297_dump_register] Reg[0x%X]=0x%X\n", i, bq24297_reg[i]);
+		pr_info("[%s] Reg[0x%X]=0x%X\n", __func__, i, bq24297_reg[i]);
 	}
 }
 

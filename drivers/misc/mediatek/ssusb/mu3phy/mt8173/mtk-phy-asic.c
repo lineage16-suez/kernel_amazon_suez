@@ -36,7 +36,7 @@ static struct u3p_project_regs g_u3p_regs;
 #define RX_SENS 1
 #ifdef CONFIG_SSUSB_PHY0_U2_CURRENT_DETECT
 /* return 0: internal current(proto pcb), else u3 current */
-static int magna_pcb_version_detect(void)
+static int abc123_pcb_version_detect(void)
 {
 	int ret = 0, data[4], rawvalue;
 
@@ -791,7 +791,7 @@ int u3p_project_init(struct u3phy_info *info)
 	int is_u3_current = 0;	/* u2 temp. modify it later to use u3 */
 
 #ifdef CONFIG_SSUSB_PHY0_U2_CURRENT_DETECT
-	is_u3_current = magna_pcb_version_detect();
+	is_u3_current = abc123_pcb_version_detect();
 #endif
 	g_u3p_regs.sif_base = phy->sif_base;
 	g_u3p_regs.phy_num = phy->phy_num;

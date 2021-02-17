@@ -1056,7 +1056,7 @@
 				regulator-min-microvolt = < 700000>;
 				regulator-max-microvolt = <1350000>;
 				regulator-ramp-delay = <12500>;
-				regulator-enable-ramp-delay = <115>;
+				regulator-enable-ramp-delay = <150>;
 			};
 
 			mt6397_vdrm_reg: buck_vdrm {

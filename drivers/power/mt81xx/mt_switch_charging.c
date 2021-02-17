@@ -912,9 +912,11 @@ int BAT_BatteryStatusFailAction(void)
 	return PMU_STATUS_OK;
 }
 
-
+#define DUMP_REG_RESET_COUNTER 60
 void mt_battery_charging_algorithm(void)
 {
+	static int reg_dump_cnt = 1;
+
 	bat_charger_reset_watchdog_timer();
 
 #if defined(CONFIG_MTK_PUMP_EXPRESS_PLUS_SUPPORT)
@@ -946,6 +948,9 @@ void mt_battery_charging_algorithm(void)
 		break;
 	}
 
-	bat_charger_dump_register();
+	if (((reg_dump_cnt++) % DUMP_REG_RESET_COUNTER) == 0) {
+		reg_dump_cnt = 1;
+		bat_charger_dump_register();
+	}
 }
 

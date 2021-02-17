@@ -2175,6 +2175,8 @@ WLAN_STATUS nicTxMsduQueue(IN P_ADAPTER_T prAdapter, UINT_8 ucPortIdx, P_QUE_T p
 
 			ASSERT(prNativePacket);
 
+			if (glIsDataStatEnabled() && !kalTRxStatsPaused())
+				kalStatTRxPkts(prAdapter->prGlueInfo, prNativePacket, TRUE);
 #if CFG_SUPPORT_MULTITHREAD
 			nicTxCopyDesc(prAdapter, (pucOutputBuf + u4TotalLength),
 				      prMsduInfo->aucTxDescBuffer, &ucTxDescSize);
@@ -2326,6 +2328,9 @@ WLAN_STATUS nicTxCmd(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmdInfo, IN UIN
 	if (prCmdInfo->eCmdType == COMMAND_TYPE_SECURITY_FRAME) {
 		prMsduInfo = prCmdInfo->prMsduInfo;
 
+		if (glIsDataStatEnabled() && !kalTRxStatsPaused())
+			kalStatOtherPkts(prAdapter->prGlueInfo, TRUE, ETH_P_1X, 0);
+
 #if CFG_SUPPORT_MULTITHREAD
 		nicTxCopyDesc(prAdapter, &pucOutputBuf[0], prMsduInfo->aucTxDescBuffer, &ucTxDescLength);
 #else
@@ -2385,6 +2390,12 @@ WLAN_STATUS nicTxCmd(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmdInfo, IN UIN
 			prCmdInfo->ucBssIndex, prMsduInfo->ucWlanIndex, prMsduInfo->ucPID,
 			prMsduInfo->ucTxSeqNum, prMsduInfo->ucStaRecIndex, u2OverallBufferLength,
 			prMsduInfo->pfTxDoneHandler ? TRUE : FALSE);
+		if (glIsDataStatEnabled() && !kalTRxStatsPaused()) {
+				P_WLAN_MAC_HEADER_T prMgmtHeader = (P_WLAN_MAC_HEADER_T) ((ULONG) (prMsduInfo->prPacket) + MAC_TX_RESERVED_FIELD);
+
+				kalStatDrvPkts(prAdapter->prGlueInfo, TRUE, DRV_PKT_MGMT,
+						(prMgmtHeader->u2FrameCtrl & MASK_FC_SUBTYPE) >> OFFSET_OF_FC_SUBTYPE);
+		}
 
 		if (prMsduInfo->pfTxDoneHandler) {
 			/* DBGLOG(INIT, TRACE,("Wait Cmd TxSeqNum:%d\n", prMsduInfo->ucTxSeqNum)); */
@@ -2414,6 +2425,8 @@ WLAN_STATUS nicTxCmd(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmdInfo, IN UIN
 		DBGLOG(TX, TRACE, "TX CMD: ID[0x%02X] SEQ[%u] SET[%u] LEN[%u]\n",
 				    prWifiCmd->ucCID, prWifiCmd->ucSeqNum, prWifiCmd->ucSetQuery,
 				    u2OverallBufferLength);
+		if (glIsDataStatEnabled() && !kalTRxStatsPaused())
+			kalStatDrvPkts(prAdapter->prGlueInfo, TRUE, DRV_PKT_CMD, prWifiCmd->ucCID);
 	}
 
 	/* <4> Write frame to data port */

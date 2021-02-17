@@ -178,11 +178,8 @@ PVRSRVConnectKM(CONNECTION_DATA *psConnection,
 				IMG_UINT32 *ui32Log2PageSize)
 {
 	PVRSRV_ERROR		eError = PVRSRV_OK;
-//#define WTF_AMAZON
-#ifndef WTF_AMAZON
 	IMG_UINT32			ui32BuildOptions, ui32BuildOptionsMismatch;
 	IMG_UINT32			ui32DDKVersion, ui32DDKBuild;
-#endif
 	
 	*ui32Log2PageSize = GET_LOG2_PAGESIZE();
 
@@ -217,7 +214,6 @@ PVRSRVConnectKM(CONNECTION_DATA *psConnection,
 		PVRSRVSetInitServerState(PVRSRV_INIT_SERVER_RUNNING, IMG_TRUE);
 #endif
 	}
-#ifndef WTF_AMAZON
 	else
 	{
 		if(PVRSRVGetInitServerState(PVRSRV_INIT_SERVER_RAN))
@@ -350,7 +346,6 @@ PVRSRVConnectKM(CONNECTION_DATA *psConnection,
 	}
 #endif
 
-#endif
 chk_exit:
 	return eError;
 }

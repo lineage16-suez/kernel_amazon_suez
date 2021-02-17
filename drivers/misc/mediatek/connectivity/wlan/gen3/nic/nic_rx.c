@@ -2754,6 +2754,9 @@ VOID nicRxProcessEventPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb
 	if (is_wakeup)
 		prAdapter->wake_event_count[prEvent->ucEID]++;
 
+	if (glIsDataStatEnabled() && !kalTRxStatsPaused())
+		kalStatDrvPkts(prAdapter->prGlueInfo, FALSE, DRV_PKT_EVENT, prEvent->ucEID);
+
 	/* Event Handling */
 	switch (prEvent->ucEID) {
 #if 0				/* It is removed now */
@@ -3219,7 +3222,7 @@ VOID nicRxProcessEventPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb
 			if (prEventBssBeaconTimeout->ucBssIndex >= BSS_INFO_NUM)
 				break;
 
-			DBGLOG(RX, INFO, "Beacon Timeout Reason: %d\n", prEventBssBeaconTimeout->ucReasonCode);
+			DBGLOG(RX, WARN, "Beacon Timeout Reason: %d\n", prEventBssBeaconTimeout->ucReasonCode);
 
 			prBssInfo = GET_BSS_INFO_BY_INDEX(prAdapter, prEventBssBeaconTimeout->ucBssIndex);
 
@@ -3601,6 +3604,9 @@ VOID nicRxProcessMgmtPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 
 	ucSubtype = (*(PUINT_8) (prSwRfb->pvHeader) & MASK_FC_SUBTYPE) >> OFFSET_OF_FC_SUBTYPE;
 
+	if (glIsDataStatEnabled() && !kalTRxStatsPaused())
+		kalStatDrvPkts(prAdapter->prGlueInfo, FALSE, DRV_PKT_MGMT, ucSubtype);
+
 #if CFG_SUPPORT_WAKEUP_STATISTICS
 		if (nicUpdateWakeupStatistics(prAdapter, RX_MGMT_INT) != 0) {
 			DBGLOG(RX, INFO, "mgmt frame, subtype 0x%x, on channel %d\n", ucSubtype,
@@ -3671,6 +3677,148 @@ VOID nicRxProcessMgmtPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 
 	nicRxReturnRFB(prAdapter, prSwRfb);
 }
+#if CFG_SUPPORT_WAKEUP_REASON_DEBUG
+static VOID nicRxCheckWakeupReason(P_SW_RFB_T prSwRfb)
+{
+	PUINT_8 pvHeader = NULL;
+	P_HW_MAC_RX_DESC_T prRxStatus;
+	UINT_16 u2PktLen = 0;
+	UINT_32 u4HeaderOffset;
+
+	if (!prSwRfb)
+		return;
+	prRxStatus = prSwRfb->prRxStatus;
+	if (!prRxStatus)
+		return;
+	prSwRfb->ucGroupVLD = (UINT_8) HAL_RX_STATUS_GET_GROUP_VLD(prRxStatus);
+
+	switch (prSwRfb->ucPacketType) {
+	case RX_PKT_TYPE_RX_DATA:
+	{
+		UINT_16 u2Temp = 0;
+
+		u2PktLen = HAL_RX_STATUS_GET_RX_BYTE_CNT(prRxStatus);
+		u4HeaderOffset = (UINT_32) (HAL_RX_STATUS_GET_HEADER_OFFSET(prRxStatus));
+		u2Temp = sizeof(HW_MAC_RX_DESC_T);
+		if (prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_4))
+			u2Temp += sizeof(HW_MAC_RX_STS_GROUP_4_T);
+		if (prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_1))
+			u2Temp += sizeof(HW_MAC_RX_STS_GROUP_1_T);
+		if (prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_2))
+			u2Temp += sizeof(HW_MAC_RX_STS_GROUP_2_T);
+		if (prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_3))
+			u2Temp += sizeof(HW_MAC_RX_STS_GROUP_3_T);
+		pvHeader = (PUINT_8)prRxStatus + u2Temp + u4HeaderOffset;
+		u2PktLen -= u2Temp + u4HeaderOffset;
+		if (!pvHeader) {
+			glNotifyWakeups("Data Frame", WAKE_TYPE_NO_PKT_DATA);
+			DBGLOG(RX, ERROR, "data packet but pvHeader is NULL!\n");
+			break;
+		}
+		if ((prRxStatus->u2StatusFlag & (RXS_DW2_RX_nERR_BITMAP | RXS_DW2_RX_nDATA_BITMAP)) ==
+			RXS_DW2_RX_nDATA_VALUE) {
+			P_WLAN_MAC_HEADER_T prWlanMacHeader = (P_WLAN_MAC_HEADER_T)pvHeader;
+
+			if ((prWlanMacHeader->u2FrameCtrl & MASK_FRAME_TYPE) ==
+				MAC_FRAME_BLOCK_ACK_REQ) {
+				UINT_32 u4BarInfo = (prSwRfb->u2SSN | (prSwRfb->ucTid << 16));
+
+				glNotifyWakeups(&u4BarInfo, WAKE_TYPE_BAR);
+				DBGLOG(RX, WARN, "BAR frame[SSN:%d, TID:%d] wakeup host\n",
+					prSwRfb->u2SSN, prSwRfb->ucTid);
+				break;
+			}
+		}
+		u2Temp = (pvHeader[ETH_TYPE_LEN_OFFSET] << 8) | (pvHeader[ETH_TYPE_LEN_OFFSET + 1]);
+
+		switch (u2Temp) {
+		case ETH_P_IPV4:
+			KAL_MARK_WAKEUP_PKT(prSwRfb->pvPacket);
+			u2Temp = *(UINT_16 *) &pvHeader[ETH_HLEN + 4];
+			DBGLOG(RX, WARN, "IP Packet from:%d.%d.%d.%d, IP ID 0x%04x wakeup host\n",
+				pvHeader[ETH_HLEN + 12], pvHeader[ETH_HLEN + 13],
+				pvHeader[ETH_HLEN + 14], pvHeader[ETH_HLEN + 15], u2Temp);
+			break;
+		case ETH_P_ARP:
+			glNotifyWakeups(&pvHeader[ETH_HLEN], WAKE_TYPE_ARP);
+			break;
+		case ETH_P_IPV6:
+			KAL_MARK_WAKEUP_PKT(prSwRfb->pvPacket);
+			break;
+		case ETH_P_1X:
+		case ETH_P_PRE_1X:
+#if CFG_SUPPORT_WAPI
+		case ETH_WPI_1X:
+#endif
+		case ETH_P_AARP:
+		case ETH_P_IPX:
+		case 0x8100: /* VLAN */
+		case 0x890d: /* TDLS */
+			glNotifyWakeups(&u2Temp, WAKE_TYPE_1X);
+			DBGLOG(RX, WARN, "Data Packet, EthType 0x%04x wakeup host\n", u2Temp);
+			break;
+		default:
+			glNotifyWakeups(&u2Temp, WAKE_TYPE_OTHER_DATA);
+			DBGLOG(RX, WARN, "maybe abnormal data packet, EthType 0x%04x wakeup host, dump it\n",
+				u2Temp);
+			DBGLOG_MEM8(RX, INFO, pvHeader, u2PktLen > 50 ? 50:u2PktLen);
+			break;
+		}
+		break;
+	}
+	case RX_PKT_TYPE_SW_DEFINED:
+		/* HIF_RX_PKT_TYPE_EVENT */
+		if ((prSwRfb->prRxStatus->u2PktTYpe & RXM_RXD_PKT_TYPE_SW_BITMAP) == RXM_RXD_PKT_TYPE_SW_EVENT) {
+			P_WIFI_EVENT_T prEvent = (P_WIFI_EVENT_T) prSwRfb->pucRecvBuff;
+
+			glNotifyWakeups(&prEvent->ucEID, WAKE_TYPE_EVENT);
+			DBGLOG(RX, WARN, "Event 0x%02x wakeup host\n", prEvent->ucEID);
+			break;
+
+		}
+		/* case HIF_RX_PKT_TYPE_MANAGEMENT: */
+		else if ((prSwRfb->prRxStatus->u2PktTYpe & RXM_RXD_PKT_TYPE_SW_BITMAP) ==
+			 RXM_RXD_PKT_TYPE_SW_FRAME) {
+			UINT_8 ucSubtype;
+			P_WLAN_MAC_MGMT_HEADER_T prWlanMgmtHeader;
+			UINT_16 u2Temp = sizeof(HW_MAC_RX_DESC_T);
+
+			u4HeaderOffset = (UINT_32) (HAL_RX_STATUS_GET_HEADER_OFFSET(prRxStatus));
+			if (prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_4))
+				u2Temp += sizeof(HW_MAC_RX_STS_GROUP_4_T);
+			if (prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_1))
+				u2Temp += sizeof(HW_MAC_RX_STS_GROUP_1_T);
+			if (prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_2))
+				u2Temp += sizeof(HW_MAC_RX_STS_GROUP_2_T);
+			if (prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_3))
+				u2Temp += sizeof(HW_MAC_RX_STS_GROUP_3_T);
+			pvHeader = (PUINT_8)prRxStatus + u2Temp + u4HeaderOffset;
+			if (!pvHeader) {
+				glNotifyWakeups("MGMT Frame", WAKE_TYPE_NO_PKT_DATA);
+				DBGLOG(RX, ERROR, "Mgmt Frame but pvHeader is NULL!\n");
+				break;
+			}
+			prWlanMgmtHeader = (P_WLAN_MAC_MGMT_HEADER_T)pvHeader;
+			ucSubtype = (prWlanMgmtHeader->u2FrameCtrl & MASK_FC_SUBTYPE) >>
+				OFFSET_OF_FC_SUBTYPE;
+			glNotifyWakeups(&ucSubtype, WAKE_TYPE_MGMT);
+			DBGLOG(RX, WARN, "MGMT frame subtype: %d SeqCtrl %d wakeup host\n",
+				ucSubtype, prWlanMgmtHeader->u2SeqCtrl);
+		} else {
+			glNotifyWakeups(&prSwRfb->prRxStatus->u2PktTYpe, WAKE_TYPE_INVALID_SW_DEFINED);
+			DBGLOG(RX, ERROR,
+				"[%s]ERROR: u2PktTYpe(0x%04X) is OUT OF DEF.!!!\n", __func__,
+				prSwRfb->prRxStatus->u2PktTYpe);
+			ASSERT(0);
+		}
+		break;
+	default:
+		glNotifyWakeups(&prSwRfb->ucPacketType, WAKE_TYPE_UNKNOWN);
+		DBGLOG(RX, WARN, "Unknown Packet %d wakeup host\n", prSwRfb->ucPacketType);
+		break;
+	}
+}
+#endif
 
 /*----------------------------------------------------------------------------*/
 /*!
@@ -3715,6 +3863,19 @@ VOID nicRxProcessRFBs(IN P_ADAPTER_T prAdapter)
 			while (QUEUE_IS_NOT_EMPTY(prTempRfbList)) {
 				QUEUE_REMOVE_HEAD(prTempRfbList, prSwRfb, P_SW_RFB_T);
 
+				if (!prSwRfb)
+					break;
+#if CFG_SUPPORT_WAKEUP_REASON_DEBUG
+				if (test_and_clear_bit(SUSPEND_FLAG_FOR_APP_TRX_STAT,
+				    &prAdapter->ulSuspendFlag) && kalWakeupFromSleep()) {
+					glLogSuspendResumeTime(FALSE);
+					glNotifyAppTxRx(prAdapter->prGlueInfo, NULL);
+				}
+
+				if (kalIsWakeupByWlan(prAdapter))
+					nicRxCheckWakeupReason(prSwRfb);
+#endif
+
 				switch (prSwRfb->ucPacketType) {
 				case RX_PKT_TYPE_RX_DATA:
 
@@ -3729,7 +3890,6 @@ VOID nicRxProcessRFBs(IN P_ADAPTER_T prAdapter)
 					if (1 == nicUpdateWakeupStatistics(prAdapter, RX_DATA_INT))
 						glWlanSetIndicateWoWFlag();
 #endif
-
 					nicRxProcessDataPacket(prAdapter, prSwRfb);
 					break;
 

@@ -40,6 +40,7 @@
 #ifdef CONFIG_OF
 void __iomem *spm_base;
 void __iomem *spm_mcucfg;
+void __iomem *spm_eint_base;
 u32 spm_irq_0 = 155;
 u32 spm_irq_1 = 156;
 u32 spm_irq_2 = 157;
@@ -220,6 +221,13 @@ static void spm_register_init(void)
 	spm_mcucfg = of_iomap(node, 0);
 	if (!spm_mcucfg)
 		spm_err("[MCUCFG] base failed\n");
+	/* EINT */
+	node = of_find_compatible_node(NULL, NULL, "mediatek,mt8173-pinctrl");
+	if (!node)
+		spm_err("pinctrl find node failed\n");
+	spm_eint_base = of_iomap(node, 0);
+	if (!spm_eint_base)
+		spm_err("get eint_base failed\n");
 
 	spm_err("spm_base = %p, spm_irq_0 = %d, spm_irq_1 = %d, spm_irq_2 = %d, spm_irq_3 = %d\n",
 		spm_base, spm_irq_0, spm_irq_1, spm_irq_2, spm_irq_3);

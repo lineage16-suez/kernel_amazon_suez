@@ -1694,8 +1694,11 @@ struct _ADAPTER_T {
 	WAKEUP_STATISTIC arWakeupStatistic[WAKEUP_TYPE_NUM];
 	int wake_event_count[EVENT_ID_END];
 #endif
-	unsigned char dtim_skip_count;
 
+#if CFG_SUPPORT_WAKEUP_REASON_DEBUG
+	ULONG ulSuspendFlag;
+#endif
+	unsigned char dtim_skip_count;
 };				/* end of _ADAPTER_T */
 
 /*******************************************************************************
@@ -1770,6 +1773,9 @@ struct _ADAPTER_T {
 
 #define IS_SCN_PWR_STATE_IDLE(_prAdapter) \
 		(_prAdapter->rWifiVar.rScanInfo.eScanPwrState == SCAN_PWR_STATE_IDLE)
+
+#define SUSPEND_FLAG_FOR_WAKEUP_REASON	(0)
+#define SUSPEND_FLAG_FOR_APP_TRX_STAT		(1)
 
 /*******************************************************************************
 *                  F U N C T I O N   D E C L A R A T I O N S

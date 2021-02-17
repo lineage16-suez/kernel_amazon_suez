@@ -442,7 +442,32 @@ const long channel_freq[] = {
 *                             D A T A   T Y P E S
 ********************************************************************************
 */
+int
+priv_set_ints_get_str(IN struct net_device *prNetDev,
+		 IN struct iw_request_info *prIwReqInfo, IN union iwreq_data *prIwReqData, IN char *pcExtra)
+{
+	PUINT_32 pu4IntBuf = NULL;
+	UINT_8 acAppName[64] = {0};
+	UINT_32 au4Param[8] = {0};
+	UINT_8 aucIP[4] = {0};
 
+	if (copy_from_user(au4Param, prIwReqData->data.pointer, prIwReqData->data.length * 7))
+		return -EINTR;
+	//DBGLOG(REQ, ERROR, "xianpu: %s\n", prIwReqData->name);
+	pu4IntBuf = (PUINT_32)au4Param;
+	DBGLOG(REQ, ERROR, "xianpu: %d, %d, %d, %d, %d, %d\n", pu4IntBuf[1], pu4IntBuf[2], pu4IntBuf[3], pu4IntBuf[4], pu4IntBuf[5], pu4IntBuf[6]);
+	kalStrCpy(acAppName, "APP: ");
+	//kalForTest();
+	aucIP[0] = pu4IntBuf[1];
+	aucIP[1] = pu4IntBuf[2];
+	aucIP[2] = pu4IntBuf[3];
+	aucIP[3] = pu4IntBuf[4];
+	//kalGetAppName(pu4IntBuf[0], aucIP, pu4IntBuf[5], pu4IntBuf[6], &acAppName[5], sizeof(acAppName) - 5);
+	acAppName[63] = 0;
+	kalMemCopy(pcExtra, acAppName, 64);
+	DBGLOG(INIT, WARN, "xianpu: %s\n", pcExtra);
+	return 0;
+}
 /*******************************************************************************
 *                            P U B L I C   D A T A
 ********************************************************************************
