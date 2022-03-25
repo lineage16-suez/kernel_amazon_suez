@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/include/nic/nic.h#1
 */
 
@@ -319,25 +307,6 @@ typedef enum _ENUM_IE_UPD_METHOD_T {
 	IE_UPD_METHOD_DELETE_ALL,
 } ENUM_IE_UPD_METHOD_T, *P_ENUM_IE_UPD_METHOD_T;
 
-
-#if CFG_SUPPORT_WAKEUP_STATISTICS
-typedef enum _WAKEUP_TYPE {
-	ABNORMAL_INT,
-	SOFTWARE_INT,
-	TX_INT,
-	RX_DATA_INT,
-	RX_EVENT_INT,
-	RX_MGMT_INT,
-	RX_OTHERS_INT,
-	WAKEUP_TYPE_NUM
-} WAKEUP_TYPE;
-typedef struct _WAKEUP_STATISTIC {
-	UINT_16 u2Count;
-	OS_SYSTIME rStartTime;
-	UINT_16 u2TimePerHundred;
-} WAKEUP_STATISTIC, P_WAKEUP_STATISTIC;
-#endif
-
 /*******************************************************************************
 *                    E X T E R N A L   R E F E R E N C E S
 ********************************************************************************
@@ -445,7 +414,7 @@ WLAN_STATUS nicActivateNetwork(IN P_ADAPTER_T prAdapter, IN UINT_8 ucBssIndex);
 WLAN_STATUS nicDeactivateNetwork(IN P_ADAPTER_T prAdapter, IN UINT_8 ucBssIndex);
 
     /* BSS-INFO */
-WLAN_STATUS nicUpdateBss(IN P_ADAPTER_T prAdapter, IN UINT_8 ucBssIndex, UINT_8 ucStaRecIndexExcluded);
+WLAN_STATUS nicUpdateBss(IN P_ADAPTER_T prAdapter, IN UINT_8 ucBssIndex);
 
     /* BSS-INFO Indication (PM) */
 WLAN_STATUS nicPmIndicateBssCreated(IN P_ADAPTER_T prAdapter, IN UINT_8 ucBssIndex);
@@ -568,9 +537,5 @@ WLAN_STATUS nicApplyNetworkAddress(IN P_ADAPTER_T prAdapter);
 UINT_8 nicGetChipEcoVer(VOID);
 BOOLEAN nicIsEcoVerEqualTo(UINT_8 ucEcoVer);
 BOOLEAN nicIsEcoVerEqualOrLaterTo(UINT_8 ucEcoVer);
-
-#if CFG_SUPPORT_WAKEUP_STATISTICS
-INT_32 nicUpdateWakeupStatistics(P_ADAPTER_T prAdapter, WAKEUP_TYPE intType);
-#endif
 
 #endif /* _NIC_H */

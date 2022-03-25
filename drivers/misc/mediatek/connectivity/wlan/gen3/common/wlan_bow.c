@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/common/wlan_bow.c#1
 */
 
@@ -1789,7 +1777,7 @@ VOID bowStopping(IN P_ADAPTER_T prAdapter)
 		/* prBowBssInfo->fgIsBeaconActivated = FALSE; */
 		nicPmIndicateBssAbort(prAdapter, prBowBssInfo->ucBssIndex);
 		bowChangeMediaState(prBowBssInfo, PARAM_MEDIA_STATE_DISCONNECTED);
-		nicUpdateBss(prAdapter, prBowBssInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+		nicUpdateBss(prAdapter, prBowBssInfo->ucBssIndex);
 		/*temp solution for FW hal_pwr_mgt.c#3037 ASSERT */
 		nicDeactivateNetwork(prAdapter, prBowBssInfo->ucBssIndex);
 		SET_NET_PWR_STATE_IDLE(prAdapter, prBowBssInfo->ucBssIndex);
@@ -1931,7 +1919,7 @@ VOID bowStarting(IN P_ADAPTER_T prAdapter)
 
 		/* 4 <3.1> use command packets to inform firmware */
 		rlmBssInitForAPandIbss(prAdapter, prBssInfo);
-		nicUpdateBss(prAdapter, prBssInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+		nicUpdateBss(prAdapter, prBssInfo->ucBssIndex);
 
 		/* 4 <3.2> Update AdHoc PM parameter */
 		nicPmIndicateBssCreated(prAdapter, prBssInfo->ucBssIndex);
@@ -2497,7 +2485,7 @@ VOID bowFsmRunEventJoinComplete(IN P_ADAPTER_T prAdapter, IN P_MSG_HDR_T prMsgHd
 #endif
 
 			/* 4 <1.3> Update BSS_INFO_T */
-			nicUpdateBss(prAdapter, prBowBssInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+			nicUpdateBss(prAdapter, prBowBssInfo->ucBssIndex);
 			DBGLOG(BOW, EVENT, "Finish bowUpdateBssInfoForJOIN.\n");
 
 			/* 4 <1.4> Activate current AP's STA_RECORD_T in Driver. */
@@ -2698,7 +2686,7 @@ WLAN_STATUS bowRunEventAAAComplete(IN P_ADAPTER_T prAdapter, IN P_STA_RECORD_T p
 
 	/*Update BssInfo to connected */
 	bowChangeMediaState(prBssInfo, PARAM_MEDIA_STATE_CONNECTED);
-	nicUpdateBss(prAdapter, prBowFsmInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+	nicUpdateBss(prAdapter, prBowFsmInfo->ucBssIndex);
 
 	/*Update StaRec to State3 */
 	cnmStaRecChangeState(prAdapter, prStaRec, STA_STATE_3);
@@ -2912,7 +2900,7 @@ BOOLEAN bowValidateAssocReq(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prSwRfb, OUT
 
 		/*Undpate BssInfo to FW */
 		bowChangeMediaState(prBowBssInfo, PARAM_MEDIA_STATE_CONNECTED);
-		nicUpdateBss(prAdapter, prStaRec->ucBssIndex, STA_REC_EXCLUDE_NONE);
+		nicUpdateBss(prAdapter, prStaRec->ucBssIndex);
 
 		/*reply successful */
 		*pu2StatusCode = STATUS_CODE_SUCCESSFUL;
@@ -3114,7 +3102,7 @@ VOID bowRunEventChGrant(IN P_ADAPTER_T prAdapter, IN P_MSG_HDR_T prMsgHdr)
 			bowResponderJoin(prAdapter, prBowFsmInfo->prTargetBssDesc);
 	} else {
 		/*update bssinfo */
-		nicUpdateBss(prAdapter, prBowFsmInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+		nicUpdateBss(prAdapter, prBowFsmInfo->ucBssIndex);
 		bowReleaseCh(prAdapter);
 	}
 

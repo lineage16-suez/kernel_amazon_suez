@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/mgmt/rlm.c#3
 */
 
@@ -1190,11 +1178,8 @@ static VOID rlmFillVhtCapIE(P_ADAPTER_T prAdapter, P_BSS_INFO_T prBssInfo, P_MSD
 	prVhtCap->ucLength = sizeof(IE_VHT_CAP_T) - ELEM_HDR_LEN;
 	prVhtCap->u4VhtCapInfo = VHT_CAP_INFO_DEFAULT_VAL;
 
-	if (IS_FEATURE_ENABLED(prAdapter->rWifiVar.ucStaVhtBfee) && (wlanGetEcoVersion(prAdapter) > 2)) {
+	if (IS_FEATURE_ENABLED(prAdapter->rWifiVar.ucStaVhtBfee) && (wlanGetEcoVersion(prAdapter) > 2))
 		prVhtCap->u4VhtCapInfo |= FIELD_VHT_CAP_INFO_BF;
-		if (IS_FEATURE_ENABLED(prAdapter->rWifiVar.ucStaVhtMuBfee))
-			prVhtCap->u4VhtCapInfo |= VHT_CAP_INFO_MU_BEAMFOMEE_CAPABLE;
-	}
 
 	if (IS_FEATURE_ENABLED(prAdapter->rWifiVar.ucRxShortGI))
 		prVhtCap->u4VhtCapInfo |= VHT_CAP_INFO_SHORT_GI_80;
@@ -1280,80 +1265,6 @@ VOID rlmFillVhtOpIE(P_ADAPTER_T prAdapter, P_BSS_INFO_T prBssInfo, P_MSDU_INFO_T
 }
 
 #endif
-
-
-static VOID rlmReviseMaxBw(
-	P_ADAPTER_T prAdapter,
-	UINT_8 ucBssIndex,
-	P_ENUM_CHNL_EXT_T peExtend,
-	P_ENUM_CHANNEL_WIDTH_P peChannelWidth,
-	PUINT_8 pucS1,
-	UINT_8 ucPrimaryCh)
-{
-	UINT_8 ucMaxBandwidth;
-	UINT_8 ucCurrentBandwidth;
-	UINT_8 ucOffset = (MAX_BW_80MHZ - CW_80MHZ);
-
-	if (*peChannelWidth > CW_20_40MHZ) {
-		/* case BW > 80 , 160 80P80 */
-		ucCurrentBandwidth = (UINT_8)*peChannelWidth + ucOffset;
-	} else {
-		/* case BW20 BW40 */
-		if (*peExtend != CHNL_EXT_SCN) {
-			/* case BW40 */
-			ucCurrentBandwidth = MAX_BW_40MHZ;
-		} else {
-			ucCurrentBandwidth = MAX_BW_20MHZ;
-		}
-	}
-
-	ucMaxBandwidth = cnmGetBssMaxBw(prAdapter, ucBssIndex);
-
-	if (ucCurrentBandwidth > ucMaxBandwidth) {
-		DBGLOG(RLM, INFO, "Decreasse the BW to (%d)\n", ucMaxBandwidth);
-
-		if (ucMaxBandwidth <= MAX_BW_40MHZ) {
-			/* BW20 * BW40 */
-			*peChannelWidth = CW_20_40MHZ;
-
-			if (ucMaxBandwidth == MAX_BW_20MHZ)
-				*peExtend = CHNL_EXT_SCN;
-		} else {
-			/* BW80, BW160, BW80P80 */
-			/* ucMaxBandwidth Must be MAX_BW_80MHZ,MAX_BW_160MHZ,MAX_BW_80MHZ */
-			/* peExtend should not change */
-			*peChannelWidth = (ucMaxBandwidth - ucOffset);
-
-			if (ucMaxBandwidth == MAX_BW_80MHZ) {
-				/* modify S1 for Bandwidth 160 downgrade 80 case */
-				if (ucCurrentBandwidth == MAX_BW_160MHZ) {
-					if ((ucPrimaryCh >= 36) && (ucPrimaryCh <= 48))
-						*pucS1 = 42;
-					else if ((ucPrimaryCh >= 52) && (ucPrimaryCh <= 64))
-						*pucS1 = 58;
-					else if ((ucPrimaryCh >= 100) && (ucPrimaryCh <= 112))
-						*pucS1 = 106;
-					else if ((ucPrimaryCh >= 116) && (ucPrimaryCh <= 128))
-						*pucS1 = 122;
-					else if ((ucPrimaryCh >= 132) && (ucPrimaryCh <= 144))
-						*pucS1 = 138; /* 160 downgrade should not in this case */
-					else if ((ucPrimaryCh >= 149) && (ucPrimaryCh <= 161))
-						*pucS1 = 155; /* 160 downgrade should not in this case */
-					else
-						DBGLOG(RLM, INFO, "Check connect 160 downgrde (%d) case\n"
-						, ucMaxBandwidth);
-
-					DBGLOG(RLM, INFO, "Decreasse the BW160 to BW80, shift S1 to (%d)\n", *pucS1);
-				}
-			}
-		}
-
-		DBGLOG(RLM, INFO, "Modify ChannelWidth (%d) and Extend (%d)\n", *peChannelWidth, *peExtend);
-	}
-
-	return;
-}
-
 
 /*----------------------------------------------------------------------------*/
 /*!
@@ -1706,20 +1617,13 @@ static UINT_8 rlmRecIeInfoForClient(P_ADAPTER_T prAdapter, P_BSS_INFO_T prBssInf
 	 *  The channel bandwidth of OP Mode IE  is  3, represent as 160/80+80MHz.
 	 */
 	if (fgHasOPModeIE == TRUE) {
-		if (ucVhtOpModeChannelWidth == 0) {
-			/*Set the channel bandwidth of VHT operating is 0,
-			together with other parameters, represent as 20M */
+
+		/*Set the channel bandwidth of VHT operating is 0, represent as 20/40MHz */
+		if ((ucVhtOpModeChannelWidth == 0) || (ucVhtOpModeChannelWidth == 1))
 			prBssInfo->ucVhtChannelWidth = 0;
-			prBssInfo->ucVhtChannelFrequencyS1 = 0;
-			prBssInfo->ucVhtChannelFrequencyS2 = 0;
-			prBssInfo->eBssSCO = CHNL_EXT_SCN;
-		} else if (ucVhtOpModeChannelWidth == 1) {
-			/*Set the channel bandwidth of VHT operating is 0, represent as 20/40MHz */
-			prBssInfo->ucVhtChannelWidth = 0;
-		} else if (ucVhtOpModeChannelWidth == 2) {
-			/*Set the channel bandwidth of VHT operating is 1, represent as 80MHz */
+		/*Set the channel bandwidth of VHT operating is 1, represent as 80MHz */
+		else if (ucVhtOpModeChannelWidth == 2)
 			prBssInfo->ucVhtChannelWidth = 1;
-		}
 	}
 #endif
 
@@ -1766,11 +1670,6 @@ static UINT_8 rlmRecIeInfoForClient(P_ADAPTER_T prAdapter, P_BSS_INFO_T prBssInf
 		DBGLOG(RLM, INFO, "Ch : DFS has Appeared\n");
 	}
 #endif
-
-	rlmReviseMaxBw(prAdapter, prBssInfo->ucBssIndex, &prBssInfo->eBssSCO,
-				(P_ENUM_CHANNEL_WIDTH_P)&prBssInfo->ucVhtChannelWidth,
-				&prBssInfo->ucVhtChannelFrequencyS1, prBssInfo->ucPrimaryChannel);
-
 	if (!rlmDomainIsValidRfSetting(prAdapter, prBssInfo->eBand,
 				       prBssInfo->ucPrimaryChannel, prBssInfo->eBssSCO,
 				       prBssInfo->ucVhtChannelWidth, prBssInfo->ucVhtChannelFrequencyS1,
@@ -2694,10 +2593,6 @@ VOID rlmProcessSpecMgtAction(P_ADAPTER_T prAdapter, P_SW_RFB_T prSwRfb)
 	pucIE = prRxFrame->aucInfoElem;
 
 	prStaRec = cnmGetStaRecByIndex(prAdapter, prSwRfb->ucStaRecIdx);
-	if (prStaRec == NULL) {
-		DBGLOG(RLM, INFO, "rlmProcessSpecMgtAction: getStaRec fail\n");
-		return;
-	}
 	prBssInfo = GET_BSS_INFO_BY_INDEX(prAdapter, prStaRec->ucBssIndex);
 
 	DBGLOG_MEM8(RLM, INFO, pucIE, u2IELength);
@@ -2796,7 +2691,7 @@ VOID rlmProcessSpecMgtAction(P_ADAPTER_T prAdapter, P_SW_RFB_T prSwRfb)
 					MAC2STR(prBssInfo->aucBSSID));
 			}
 		}
-		nicUpdateBss(prAdapter, prBssInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+		nicUpdateBss(prAdapter, prBssInfo->ucBssIndex);
 	}
 
 }

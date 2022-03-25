@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/include/config.h#3
 */
 
@@ -108,7 +96,6 @@
 #define CFG_SUPPORT_RX_HT_GF        1	/* 802.11n RX HT green-field capability */
 #define CFG_SUPPORT_BFEE            1
 #define CFG_SUPPORT_WAPI            1
-#define AMZN_PWR_TABLE_ENABLE 1 /*amazon specified power table setup enable flag*/
 
 /*------------------------------------------------------------------------------
  * SLT Option
@@ -616,23 +603,6 @@
 #define CFG_SUPPORT_UL_PSMP         0
 
 #define CFG_SUPPORT_ROAMING         1	/* Roaming System */
-#if (CFG_SUPPORT_ROAMING == 1)
-
-/* Roaming feature: skip roaming when only one ESSID AP
-*  Need Android background scan
-*  if no roaming event occurred
-*  to trigger roaming scan
-*  after skip roaming in one ESSID AP case
-*/
-#define CFG_SUPPORT_ROAMING_SKIP_ONE_AP		1
-#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
-#define CFG_MAX_NUM_ROAM_BSS_LIST		64
-#endif
-#else
-#define CFG_SUPPORT_ROAMING_SKIP_ONE_AP		0
-
-#endif /* CFG_SUPPORT_ROAMING */
-
 #define CFG_SUPPORT_SWCR            1
 
 #define CFG_SUPPORT_ANTI_PIRACY     1
@@ -641,7 +611,7 @@
 
 #define CFG_SUPPORT_P2P_RSSI_QUERY        0
 
-#define CFG_SHOW_MACADDR_SOURCE     0
+#define CFG_SHOW_MACADDR_SOURCE     1
 
 #define CFG_SUPPORT_802_11V                    0	/* Support 802.11v Wireless Network Management */
 #define CFG_SUPPORT_802_11V_TIMING_MEASUREMENT 0
@@ -746,30 +716,6 @@
  */
 #define CFG_SUPPORT_SNIFFER                 1
 
-/*------------------------------------------------------------------------------
- * Flags of WoW statistics SUPPORT
- *------------------------------------------------------------------------------
- */
-#define CFG_SUPPORT_WAKEUP_STATISTICS       1
-
-#define CFG_SUPPORT_WAKEUP_REASON_DEBUG		1	/* debug which packet wake up host */
-
-/*------------------------------------------------------------------------------
- * Flags of channel list in scan request SUPPORT
- *------------------------------------------------------------------------------
- */
-#define CFG_SUPPORT_SCAN_CHANNEL_REQUEST    1
-
-/*------------------------------------------------------------------------------
- * Flags of Drop Packet Replay SUPPORT
- *------------------------------------------------------------------------------
- */
-#define CFG_SUPPORT_REPLAY_DETECTION 1
-/*------------------------------------------------------------------------------
- * Flags of GTK Rekey Offload when suspend
- *------------------------------------------------------------------------------
- */
-#define CFG_SUPPORT_SUSPEND_GTK_OFFLOAD 1
 /*******************************************************************************
 *                             D A T A   T Y P E S
 ********************************************************************************

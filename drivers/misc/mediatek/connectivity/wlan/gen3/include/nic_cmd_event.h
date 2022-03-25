@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/include/nic_cmd_event.h#1
 */
 
@@ -147,10 +135,6 @@ typedef enum _ENUM_CMD_ID_T {
 	CMD_ID_SET_GSCAN_MAC_ADDR,	/* 0x65 (Set) */
 	CMD_ID_GET_GSCAN_RESULT,	/* 0x66 (Get) */
 
-#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
-	CMD_ID_SET_ROAMING_SKIP = 0x6D, /* 0x6D (Set) used to setting roaming skip*/
-#endif
-
 	CMD_ID_GET_NIC_CAPABILITY = 0x80,	/* 0x80 (Query) */
 	CMD_ID_GET_LINK_QUALITY,	/* 0x81 (Query) */
 	CMD_ID_GET_STATISTICS,	/* 0x82 (Query) */
@@ -179,7 +163,6 @@ typedef enum _ENUM_CMD_ID_T {
 	CMD_ID_SET_HOTSPOT_OPTIMIZATION = 0xFA,	/* 0xFA (Set) */
 	CMD_ID_SET_TDLS_CH_SW = 0xFB,
 	CMD_ID_SET_MONITOR = 0xFC,	/* 0xFC (Set) */
-	CMD_ID_SET_PATTERN_FILTER = 0xFD, /* 0xFD */
 	CMD_ID_END
 } ENUM_CMD_ID_T, *P_ENUM_CMD_ID_T;
 
@@ -522,7 +505,7 @@ typedef struct _EVENT_MIC_ERR_INFO {
 /* event of add key done for port control */
 typedef struct _EVENT_ADD_KEY_DONE_INFO {
 	UINT_8 ucBSSIndex;
-	UINT_8 ucKeyId;
+	UINT_8 ucReserved;
 	UINT_8 aucStaAddr[6];
 } EVENT_ADD_KEY_DONE_INFO, *P_EVENT_ADD_KEY_DONE_INFO;
 
@@ -755,8 +738,7 @@ typedef struct _IPV4_NETWORK_ADDRESS {
 typedef struct _CMD_SET_NETWORK_ADDRESS_LIST {
 	UINT_8 ucBssIndex;
 	UINT_8 ucAddressCount;
-	UINT_8 ucDtimSkipCount;
-	UINT_8 ucReserved[1];
+	UINT_8 ucReserved[2];
 	IPV4_NETWORK_ADDRESS arNetAddress[1];
 } CMD_SET_NETWORK_ADDRESS_LIST, *P_CMD_SET_NETWORK_ADDRESS_LIST;
 
@@ -1475,26 +1457,6 @@ typedef struct _CMD_GET_STA_STATISTICS_T {
 	UINT_8 aucReserved2[16];
 } CMD_GET_STA_STATISTICS_T, *P_CMD_GET_STA_STATISTICS_T;
 
-/*RX PATTERN FILTER */
-enum ENUM_OPCODE_T {
-	PATTERN_OP_ADD = 0,
-	PATTERN_OP_DEL,
-	PATTERN_OP_ENABLE,
-	PATTERN_OP_DISABLE,
-	PATTERN_OP_NUM /*Maxinum number of HIF RX Port*/
-};
-
-struct CMD_RX_PATTERN_FILTER {
-	enum ENUM_OPCODE_T eOpcode;
-	UINT_8 ucPatternIndex;
-	UINT_8 aucPattern[64];
-	UINT_8 aucPatternBitMask[64];
-	UINT_32 u4Offset;
-	UINT_32 u4Length;
-	BOOLEAN fsIsWhiteList;
-	BOOLEAN fgIsEqual;
-};
-
 /* per access category statistics */
 typedef struct _WIFI_WMM_AC_STAT_GET_FROM_FW_T {
 	UINT_32 u4TxFailMsdu;
@@ -1802,14 +1764,6 @@ VOID nicCmdEventQueryLTESafeChn(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmdI
 VOID nicCmdEventBatchScanResult(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmdInfo, IN PUINT_8 pucEventBuf);
 #endif
 
-VOID nicCmdEventDbgCntr(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmdInfo, IN PUINT_8 pucEventBuf);
-
-#if CFG_SUPPORT_REPLAY_DETECTION
-VOID nicCmdEventSetAddKey(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmdInfo,
-			  IN PUINT_8 pucEventBuf);
-VOID nicOidCmdTimeoutSetAddKey(IN P_ADAPTER_T prAdapter,
-			       IN P_CMD_INFO_T prCmdInfo);
-#endif
 /*******************************************************************************
 *                              F U N C T I O N S
 ********************************************************************************

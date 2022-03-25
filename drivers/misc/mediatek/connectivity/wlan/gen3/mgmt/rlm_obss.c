@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/mgmt/rlm_obss.c#2
 */
 
@@ -292,17 +280,14 @@ VOID rlmObssScanDone(P_ADAPTER_T prAdapter, P_MSG_HDR_T prMsgHdr)
 	 * To do: invoke rlmObssChnlLevel() to decide if 20/40 BSS coexistence
 	 *        management frame is needed.
 	 */
-	do {
-		if ((prBssInfo->auc2G_20mReqChnlList[0] > 0 || prBssInfo->auc2G_NonHtChnlList[0] > 0)) {
+	if (prBssInfo->auc2G_20mReqChnlList[0] > 0 || prBssInfo->auc2G_NonHtChnlList[0] > 0) {
 
-			prMsduInfo = (P_MSDU_INFO_T) cnmMgtPktAlloc(prAdapter, MAC_TX_RESERVED_FIELD + PUBLIC_ACTION_MAX_LEN);
+		DBGLOG(RLM, INFO, "Send 20/40 coexistence mgmt(20mReq=%d, NonHt=%d)\n",
+				   prBssInfo->auc2G_20mReqChnlList[0], prBssInfo->auc2G_NonHtChnlList[0]);
 
-			if (prMsduInfo == NULL)
-				break;
+		prMsduInfo = (P_MSDU_INFO_T) cnmMgtPktAlloc(prAdapter, MAC_TX_RESERVED_FIELD + PUBLIC_ACTION_MAX_LEN);
 
-			DBGLOG(RLM, INFO, "Send 20/40 coexistence mgmt(20mReq=%d, NonHt=%d)\n",
-					   prBssInfo->auc2G_20mReqChnlList[0], prBssInfo->auc2G_NonHtChnlList[0]);
-
+		if (prMsduInfo) {
 			prTxFrame = (P_ACTION_20_40_COEXIST_FRAME)
 			    ((ULONG) (prMsduInfo->prPacket) + MAC_TX_RESERVED_FIELD);
 
@@ -352,7 +337,7 @@ VOID rlmObssScanDone(P_ADAPTER_T prAdapter, P_MSG_HDR_T prMsgHdr)
 			/* 4 Enqueue the frame to send this action frame. */
 			nicTxEnqueueMsdu(prAdapter, prMsduInfo);
 		}
-	} while (FALSE);
+	}
 	/* end of prMsduInfo != NULL */
 	if (prBssInfo->u2ObssScanInterval > 0) {
 		DBGLOG(RLM, INFO, "Set OBSS timer (NetIdx=%d, %d sec)\n",

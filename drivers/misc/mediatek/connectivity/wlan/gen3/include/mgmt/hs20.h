@@ -1,15 +1,3 @@
-/*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
 
 /*! \file   hs20.h
  *  \brief This file contains the function declaration for hs20.c.
@@ -17,31 +5,6 @@
 
 #ifndef _HS20_H
 #define _HS20_H
-
-#if CFG_ENABLE_GTK_FRAME_FILTER
-/*For GTK Frame Filter*/
-typedef struct _IPV4_NETWORK_ADDRESS_LIST {
-	UINT_8 ucAddrCount;
-	IPV4_NETWORK_ADDRESS arNetAddr[1];
-} IPV4_NETWORK_ADDRESS_LIST, *P_IPV4_NETWORK_ADDRESS_LIST;
-
-/*For GTK Frame Filter*/
-#if DBG
-#define FREE_IPV4_NETWORK_ADDR_LIST(_prAddrList)    \
-	{   \
-		UINT_32 u4Size = OFFSET_OF(IPV4_NETWORK_ADDRESS_LIST, arNetAddr) +  \
-				 (((_prAddrList)->ucAddrCount) * sizeof(IPV4_NETWORK_ADDRESS));  \
-		kalMemFree((_prAddrList), VIR_MEM_TYPE, u4Size);    \
-		(_prAddrList) = NULL;   \
-	}
-#else
-#define FREE_IPV4_NETWORK_ADDR_LIST(_prAddrList)    \
-	{   \
-		kalMemFree((_prAddrList), VIR_MEM_TYPE, 0);    \
-		(_prAddrList) = NULL;   \
-	}
-#endif
-#endif
 
 #if CFG_SUPPORT_PASSPOINT
 /*******************************************************************************
@@ -66,6 +29,13 @@ typedef struct _IPV4_NETWORK_ADDRESS_LIST {
  ********************************************************************************
  */
 
+#if CFG_ENABLE_GTK_FRAME_FILTER
+/*For GTK Frame Filter*/
+typedef struct _IPV4_NETWORK_ADDRESS_LIST {
+	UINT_8 ucAddrCount;
+	IPV4_NETWORK_ADDRESS arNetAddr[1];
+} IPV4_NETWORK_ADDRESS_LIST, *P_IPV4_NETWORK_ADDRESS_LIST;
+#endif
 
 /* Entry of BSSID Pool - For SIGMA Test */
 typedef struct _BSSID_ENTRY_T {
@@ -112,6 +82,22 @@ struct _HS20_INFO_T {
  ********************************************************************************
  */
 
+/*For GTK Frame Filter*/
+#if DBG
+#define FREE_IPV4_NETWORK_ADDR_LIST(_prAddrList)    \
+	{   \
+		UINT_32 u4Size = OFFSET_OF(IPV4_NETWORK_ADDRESS_LIST, arNetAddr) +  \
+				 (((_prAddrList)->ucAddrCount) * sizeof(IPV4_NETWORK_ADDRESS));  \
+		kalMemFree((_prAddrList), VIR_MEM_TYPE, u4Size);    \
+		(_prAddrList) = NULL;   \
+	}
+#else
+#define FREE_IPV4_NETWORK_ADDR_LIST(_prAddrList)    \
+	{   \
+		kalMemFree((_prAddrList), VIR_MEM_TYPE, 0);    \
+		(_prAddrList) = NULL;   \
+	}
+#endif
 
 /*******************************************************************************
  *                              F U N C T I O N S

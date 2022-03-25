@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/mgmt/cnm_mem.c#2
 */
 
@@ -781,8 +769,6 @@ PVOID cnmMemAlloc(IN P_ADAPTER_T prAdapter, IN ENUM_RAM_TYPE_T eRamType, IN UINT
 #else
 	pvMemory = (PVOID) NULL;
 #endif
-	if (pvMemory == NULL)
-		DBGLOG(MEM, ERROR, "alloc memory (%d) failed\n", u4Length);
 
 #if CFG_DBG_MGT_BUF
 	prBufInfo->u4AllocNullCount++;
@@ -939,8 +925,6 @@ P_STA_RECORD_T cnmStaRecAlloc(P_ADAPTER_T prAdapter, ENUM_STA_TYPE_T eStaType, U
 			prStaRec->u4TotalTxPktsTime = 0;
 			prStaRec->u4TotalRxPktsNumber = 0;
 			prStaRec->u4MaxTxPktsTime = 0;
-			prStaRec->u4MacTxCnt = 0;
-			prStaRec->u4MacTxNoAckCnt = 0;
 #endif
 
 			for (k = 0; k < NUM_OF_PER_STA_TX_QUEUES; k++)
@@ -1564,22 +1548,22 @@ VOID cnmDumpMemoryStatus(IN P_ADAPTER_T prAdapter)
 	P_BUF_INFO_T prBufInfo;
 
 #if CFG_DBG_MGT_BUF
-	DBGLOG(SW4, WARN, "============= DUMP Memory Status =============\n");
+	DBGLOG(SW4, TRACE, "============= DUMP Memory Status =============\n");
 
-	DBGLOG(SW4, WARN, "Dynamic alloc OS memory count: alloc[%u] free[%u]\n",
+	DBGLOG(SW4, TRACE, "Dynamic alloc OS memory count: alloc[%u] free[%u]\n",
 			   prAdapter->u4MemAllocDynamicCount, prAdapter->u4MemFreeDynamicCount);
 
 	prBufInfo = &prAdapter->rMsgBufInfo;
-	DBGLOG(SW4, WARN, "MSG memory count: alloc[%u] free[%u] null[%u] bitmap[0x%08x]\n",
+	DBGLOG(SW4, TRACE, "MSG memory count: alloc[%u] free[%u] null[%u] bitmap[0x%08x]\n",
 			   prBufInfo->u4AllocCount, prBufInfo->u4FreeCount,
 			   prBufInfo->u4AllocNullCount, (UINT_32) prBufInfo->rFreeBlocksBitmap);
 
 	prBufInfo = &prAdapter->rMgtBufInfo;
-	DBGLOG(SW4, WARN, "MGT memory count: alloc[%u] free[%u] null[%u] bitmap[0x%08x]\n",
+	DBGLOG(SW4, TRACE, "MGT memory count: alloc[%u] free[%u] null[%u] bitmap[0x%08x]\n",
 			   prBufInfo->u4AllocCount, prBufInfo->u4FreeCount,
 			   prBufInfo->u4AllocNullCount, (UINT_32) prBufInfo->rFreeBlocksBitmap);
 
-	DBGLOG(SW4, WARN, "============= DUMP END =============\n");
+	DBGLOG(SW4, TRACE, "============= DUMP END =============\n");
 
 #endif
 }

@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: @(#) gl_p2p.c@@
 */
 
@@ -887,27 +875,6 @@ mtk_cfg80211_default_mgmt_stypes[NUM_NL80211_IFTYPES] = {
 				   }
 };
 
-static const struct ieee80211_iface_limit mtk_p2p_iface_limits[] = {
-	{
-		.max = 1,
-		.types = BIT(NL80211_IFTYPE_STATION) |
-			 BIT(NL80211_IFTYPE_AP)
-	},
-	{
-		.max = 1,
-		.types = BIT(NL80211_IFTYPE_P2P_CLIENT) |
-			 BIT(NL80211_IFTYPE_P2P_GO)
-	},
-};
-static const struct ieee80211_iface_combination mtk_p2p_iface_combos[] = {
-	{
-		 .max_interfaces = 2,
-		 .num_different_channels = 2,
-		 .n_limits = ARRAY_SIZE(mtk_p2p_iface_limits),
-		 .limits = mtk_p2p_iface_limits
-	}
-};
-
 #endif
 
 #if 0
@@ -1517,7 +1484,7 @@ BOOLEAN glRegisterP2P(P_GLUE_INFO_T prGlueInfo, const char *prDevName, BOOLEAN f
 		return FALSE;
 	}
 #endif
-	DBGLOG(INIT, TRACE, "glRegisterP2P\n");
+	DBGLOG(INIT, INFO, "glRegisterP2P\n");
 
 	/*0. allocate p2pinfo */
 	if (!p2PAllocInfo(prGlueInfo)) {
@@ -1665,8 +1632,7 @@ BOOLEAN glP2pCreateWirelessDevice(P_GLUE_INFO_T prGlueInfo)
 	    | BIT(NL80211_IFTYPE_P2P_CLIENT)
 	    | BIT(NL80211_IFTYPE_P2P_GO)
 	    | BIT(NL80211_IFTYPE_STATION);
-	prWiphy->iface_combinations = mtk_p2p_iface_combos;
-	prWiphy->n_iface_combinations = ARRAY_SIZE(mtk_p2p_iface_combos);
+
 	prWiphy->bands[IEEE80211_BAND_2GHZ] = &mtk_band_2ghz;
 	prWiphy->bands[IEEE80211_BAND_5GHZ] = &mtk_band_5ghz;
 
@@ -1878,11 +1844,7 @@ static int p2pStop(IN struct net_device *prDev)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
 	P_ADAPTER_T prAdapter = NULL;
-	struct cfg80211_scan_request *prScanRequest = NULL;
-	P_GL_P2P_INFO_T prGlueP2pInfo = (P_GL_P2P_INFO_T) NULL;
 /* P_MSG_P2P_FUNCTION_SWITCH_T prFuncSwitch; */
-
-	GLUE_SPIN_LOCK_DECLARATION();
 
 	ASSERT(prDev);
 
@@ -1891,17 +1853,6 @@ static int p2pStop(IN struct net_device *prDev)
 
 	prAdapter = prGlueInfo->prAdapter;
 	ASSERT(prAdapter);
-	prGlueP2pInfo = prGlueInfo->prP2PInfo;
-	/* CFG80211 down */
-	GLUE_ACQUIRE_SPIN_LOCK(prGlueInfo, SPIN_LOCK_NET_DEV);
-	if (prGlueP2pInfo->prScanRequest != NULL) {
-		prScanRequest = prGlueP2pInfo->prScanRequest;
-		prGlueP2pInfo->prScanRequest = NULL;
-	} else
-		DBGLOG(P2P, WARN, "[p2p] scan complete but cfg80211 scan request is NULL\n");
-	GLUE_RELEASE_SPIN_LOCK(prGlueInfo, SPIN_LOCK_NET_DEV);
-	if (prScanRequest)
-		cfg80211_scan_done(prScanRequest, TRUE);
 
 	/* 1. stop TX queue */
 	netif_tx_stop_all_queues(prDev);
@@ -2916,10 +2867,6 @@ void mtk_p2p_wext_set_key_prkit(void)
 
 	/* BSSID */
 	memcpy(prKey->arBSSID, prIWEncExt->addr.sa_data, 6);
-	if (prIWEncExt->key_len >= 32) {
-		ret = -EINVAL;
-		break;
-	}
 	memcpy(prKey->aucKeyMaterial, prIWEncExt->key, prIWEncExt->key_len);
 
 	prKey->u4KeyLength = prIWEncExt->key_len;

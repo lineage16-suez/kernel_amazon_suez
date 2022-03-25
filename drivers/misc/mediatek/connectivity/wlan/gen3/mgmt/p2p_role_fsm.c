@@ -1,15 +1,3 @@
-/*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
 #include "precomp.h"
 #include "p2p_role_state.h"
 
@@ -419,7 +407,7 @@ p2pRoleFsmRunEventDeauthTxDone(IN P_ADAPTER_T prAdapter,
 			p2pChangeMediaState(prAdapter, prP2pBssInfo, PARAM_MEDIA_STATE_DISCONNECTED);
 		}
 
-		nicUpdateBss(prAdapter, prP2pBssInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+		nicUpdateBss(prAdapter, prP2pBssInfo->ucBssIndex);
 
 	} while (FALSE);
 
@@ -1507,7 +1495,7 @@ p2pRoleFsmRunEventAAAComplete(IN P_ADAPTER_T prAdapter, IN P_STA_RECORD_T prStaR
 
 		/* Update Connected state to FW. */
 		if (eOriMediaState != prP2pBssInfo->eConnectionState)
-			nicUpdateBss(prAdapter, prP2pBssInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+			nicUpdateBss(prAdapter, prP2pBssInfo->ucBssIndex);
 
 	} while (FALSE);
 
@@ -1588,8 +1576,7 @@ VOID p2pRoleFsmRunEventSwitchOPMode(IN P_ADAPTER_T prAdapter, IN P_MSG_HDR_T prM
 
 		DBGLOG(P2P, TRACE, "p2pRoleFsmRunEventSwitchOPMode\n");
 
-		if (prSwitchOpMode->ucRoleIdx < BSS_P2P_NUM)
-			prP2pRoleFsmInfo = prAdapter->rWifiVar.aprP2pRoleFsmInfo[prSwitchOpMode->ucRoleIdx];
+		prP2pRoleFsmInfo = prAdapter->rWifiVar.aprP2pRoleFsmInfo[prSwitchOpMode->ucRoleIdx];
 
 		ASSERT(prP2pRoleFsmInfo->ucBssIndex < P2P_DEV_BSS_INDEX);
 

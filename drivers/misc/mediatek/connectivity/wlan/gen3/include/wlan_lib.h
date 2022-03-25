@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/include/wlan_lib.h#3
 */
 
@@ -788,11 +776,6 @@ typedef struct _PARAM_GET_STA_STATISTICS {
 	UINT_32 u4TransmitCount;	/* Transmit in the air (wtbl) */
 	UINT_32 u4TransmitFailCount;	/* Transmit without ack/ba in the air (wtbl) */
 
-	UINT_32 u4NetDevTxPkts;
-	UINT_32 u4NetDevTxBytes;
-	UINT_32 u4NetDevRxPkts;
-	UINT_32 u4NetDevRxBytes;
-
 	WIFI_WMM_AC_STAT_T arLinkStatistics[AC_NUM];	/*link layer statistics */
 
 	/* Global queue management statistic */
@@ -1318,6 +1301,3 @@ WLAN_STATUS wlanDhcpTxDone(IN P_ADAPTER_T prAdapter,
 
 WLAN_STATUS wlanArpTxDone(IN P_ADAPTER_T prAdapter,
 			  IN P_MSDU_INFO_T prMsduInfo, IN ENUM_TX_RESULT_CODE_T rTxDoneStatus);
-#if CFG_SUPPORT_SUSPEND_GTK_OFFLOAD
-int wlanSuspendRekeyOffload(P_GLUE_INFO_T prGlueInfo, IN UINT_8 ucRekeyDisable);
-#endif

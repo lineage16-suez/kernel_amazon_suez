@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/nic/nic_rx.c#5
 */
 
@@ -1500,8 +1488,7 @@ P_SW_RFB_T incRxDefragMPDU(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prSWRfb, OUT 
 		/* The last fragment frame */
 		if (ucFragNum) {
 			DBGLOG(RX, LOUD,
-			       "FC %04hx M %04x SQ %04hx\n",
-			       u2FrameCtrl, (u2FrameCtrl & MASK_FC_MORE_FRAG), u2SeqCtrl);
+			       "FC %04x M %04x SQ %04x\n", u2FrameCtrl, (u2FrameCtrl & MASK_FC_MORE_FRAG), u2SeqCtrl);
 			fgLast = TRUE;
 		}
 		/* Non-fragment frame */
@@ -1512,13 +1499,11 @@ P_SW_RFB_T incRxDefragMPDU(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prSWRfb, OUT 
 	else {
 		if (ucFragNum == 0) {
 			DBGLOG(RX, LOUD,
-			       "FC %04hx M %04x SQ %04hx\n",
-			       u2FrameCtrl, (u2FrameCtrl & MASK_FC_MORE_FRAG), u2SeqCtrl);
+			       "FC %04x M %04x SQ %04x\n", u2FrameCtrl, (u2FrameCtrl & MASK_FC_MORE_FRAG), u2SeqCtrl);
 			fgFirst = TRUE;
 		} else {
 			DBGLOG(RX, LOUD,
-			       "FC %04hx M %04x SQ %04hx\n",
-			       u2FrameCtrl, (u2FrameCtrl & MASK_FC_MORE_FRAG), u2SeqCtrl);
+			       "FC %04x M %04x SQ %04x\n", u2FrameCtrl, (u2FrameCtrl & MASK_FC_MORE_FRAG), u2SeqCtrl);
 		}
 	}
 
@@ -1753,7 +1738,7 @@ BOOLEAN nicRxIsDuplicateFrame(IN OUT P_SW_RFB_T prSwRfb)
 			prSwRfb->prStaRec->au2CachedSeqCtrl[u4SeqCtrlCacheIdx] = u2SequenceControl;
 			if (fgIsAmsduSubframe == RX_PAYLOAD_FORMAT_FIRST_SUB_AMSDU)
 				prSwRfb->prStaRec->afgIsIgnoreAmsduDuplicate[u4SeqCtrlCacheIdx] = TRUE;
-			DBGLOG(RX, LOUD, "RXM: SC= 0x%hX (Cache[%u] updated)\n", u2SequenceControl, u4SeqCtrlCacheIdx);
+			DBGLOG(RX, LOUD, "RXM: SC= 0x%X (Cache[%lu] updated)\n", u2SequenceControl, u4SeqCtrlCacheIdx);
 		} else {
 			/* A duplicate. */
 			if (prSwRfb->prStaRec->afgIsIgnoreAmsduDuplicate[u4SeqCtrlCacheIdx]) {
@@ -1761,7 +1746,7 @@ BOOLEAN nicRxIsDuplicateFrame(IN OUT P_SW_RFB_T prSwRfb)
 					prSwRfb->prStaRec->afgIsIgnoreAmsduDuplicate[u4SeqCtrlCacheIdx] = FALSE;
 			} else {
 				fgIsDuplicate = TRUE;
-				DBGLOG(RX, LOUD, "RXM: SC= 0x%hX (Cache[%u] duplicate)\n",
+				DBGLOG(RX, LOUD, "RXM: SC= 0x%X (Cache[%lu] duplicate)\n",
 				       u2SequenceControl, u4SeqCtrlCacheIdx);
 			}
 		}
@@ -1773,7 +1758,7 @@ BOOLEAN nicRxIsDuplicateFrame(IN OUT P_SW_RFB_T prSwRfb)
 		prSwRfb->prStaRec->au2CachedSeqCtrl[u4SeqCtrlCacheIdx] = u2SequenceControl;
 		prSwRfb->prStaRec->afgIsIgnoreAmsduDuplicate[u4SeqCtrlCacheIdx] = FALSE;
 
-		DBGLOG(RX, LOUD, "RXM: SC= 0x%hX (Cache[%u] updated)\n", u2SequenceControl, u4SeqCtrlCacheIdx);
+		DBGLOG(RX, LOUD, "RXM: SC= 0x%X (Cache[%lu] updated)\n", u2SequenceControl, u4SeqCtrlCacheIdx);
 	}
 
 	return fgIsDuplicate;
@@ -2010,7 +1995,7 @@ VOID nicRxProcessGOBroadcastPkt(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prSwRfb)
 		}
 	} else {
 		DBGLOG(RX, WARN,
-		       "Stop to forward BMC packet due to less free Sw Rfb %u\n", prRxCtrl->rFreeSwRfbList.u4NumElem);
+		       "Stop to forward BMC packet due to less free Sw Rfb %lu\n", prRxCtrl->rFreeSwRfbList.u4NumElem);
 	}
 
 	/* 3. Indicate to host */
@@ -2315,14 +2300,6 @@ VOID nicRxProcessDataPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 	P_SW_RFB_T prRetSwRfb, prNextSwRfb;
 	P_HW_MAC_RX_DESC_T prRxStatus;
 	BOOLEAN fgDrop;
-	P_STA_RECORD_T prStaRec;
-	P_HW_MAC_RX_STS_GROUP_3_T prRxStatusGroup3;
-	UINT_8 noise_level = 0;
-	UINT_8 ucRxRate;
-	UINT_8 ucRxMode;
-	UINT_8 ucMcs;
-	UINT_8 ucFrMode;
-	UINT_8 ucShortGI;
 
 	DEBUGFUNC("nicRxProcessDataPacket");
 	/* DBGLOG(INIT, TRACE, ("\n")); */
@@ -2343,7 +2320,7 @@ VOID nicRxProcessDataPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 	/* ToDo: Add comments by WH.Su */
 	if (HAL_RX_STATUS_IS_CIPHER_MISMATCH(prRxStatus)) {
 		/* DBGLOG(RX, TRACE, ("Not the CM bit\n")); */
-		prRxStatus->u2StatusFlag = prRxStatus->u2StatusFlag & ~RX_STATUS_FLAG_CIPHER_MISMATCH;
+		prRxStatus->u2StatusFlag = prRxStatus->u2StatusFlag & !RX_STATUS_FLAG_CIPHER_MISMATCH;
 	}
 	/* BA session */
 	if (prRxStatus->u2StatusFlag == RXS_DW2_AMPDU_nERR_VALUE)
@@ -2360,6 +2337,8 @@ VOID nicRxProcessDataPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 		fgDrop = TRUE;
 		if (!HAL_RX_STATUS_IS_ICV_ERROR(prRxStatus)
 		    && HAL_RX_STATUS_IS_TKIP_MIC_ERROR(prRxStatus)) {
+			P_STA_RECORD_T prStaRec;
+
 			prStaRec = cnmGetStaRecByAddress(prAdapter,
 							 prAdapter->prAisBssInfo->ucBssIndex,
 							 prAdapter->rWlanInfo.rCurrBssId.arMacAddress);
@@ -2368,23 +2347,10 @@ VOID nicRxProcessDataPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 				rsnTkipHandleMICFailure(prAdapter, prStaRec, 0);
 			}
 		} else if (HAL_RX_STATUS_IS_LLC_MIS(prRxStatus)) {
-			if (net_ratelimit()) {
-				nicRxFillRFB(prAdapter, prSwRfb);
-				DBGLOG(RSN, EVENT, "LLC_MIS_ERR\n");
-				if (HAL_RX_STATUS_GET_HEADER_LEN(prRxStatus) <=
-				    WLAN_MAC_HEADER_LEN) {
-					print_hex_dump(KERN_INFO, "",
-						       DUMP_PREFIX_OFFSET,
-						       16, 1,
-						       (PUINT_8)prSwRfb->pvHeader,
-						       (UINT_16)HAL_RX_STATUS_GET_HEADER_LEN(prRxStatus),
-						       false);
-				}
-			}
+			DBGLOG(RSN, EVENT, "LLC_MIS_ERR\n");
 			fgDrop = FALSE;	/* Drop after send de-auth  */
 		}
 	}
-
 
 #if 0				/* Check 1x Pkt */
 	if (prSwRfb->u2PacketLen > 14) {
@@ -2422,53 +2388,6 @@ VOID nicRxProcessDataPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 		prRxCtrl->u4QueuedCnt++;
 #endif
 		nicRxFillRFB(prAdapter, prSwRfb);
-
-		prStaRec = cnmGetStaRecByAddress(prAdapter,
-						 prAdapter->prAisBssInfo->ucBssIndex,
-						 prAdapter->rWlanInfo.rCurrBssId.arMacAddress);
-		if (prStaRec) {
-			prRxStatusGroup3 = prSwRfb->prRxStatusGroup3;
-
-			if ((prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_3)) == 0) {
-				DBGLOG(RX, TRACE, "RX Group3 is not exist\n");
-			} else {
-				noise_level = ((prRxStatusGroup3->u4RxVector[5] & RX_VT_NF0_MASK) >> 1);
-
-				if (noise_level == 0) {
-					DBGLOG(RX, TRACE, "Invalid noise level\n");
-				} else if (prStaRec->noise_avg) {
-					prStaRec->noise_avg =
-						(((prStaRec->noise_avg << 3) -
-						  prStaRec->noise_avg) >> 3) +
-						(noise_level >> 3);
-				} else {
-					prStaRec->noise_avg = noise_level;
-				}
-
-				DBGLOG(RX, TRACE, "Noise_level avg:%d latest:%d\n",
-				       prStaRec->noise_avg, noise_level);
-
-				/* Rx rate */
-				ucRxMode = (((prRxStatusGroup3)->u4RxVector[0] & RX_VT_RX_MODE_MASK)
-					    >> RX_VT_RX_MODE_OFFSET);
-				/* Bit Number 2 RATE */
-				if ((ucRxMode == RX_VT_LEGACY_CCK) || (ucRxMode == RX_VT_LEGACY_OFDM)) {
-					/* Bit[2:0] for Legacy CCK, Bit[3:0] for Legacy OFDM */
-					ucRxRate = ((prRxStatusGroup3)->u4RxVector[0] & BITS(0, 3));
-					prStaRec->u2LastPhyRate =
-						aucHwRate2PhyRate[ucRxRate] * 5;
-				} else {
-					ucMcs = ((prRxStatusGroup3)->u4RxVector[0] & RX_VT_RX_RATE_AC_MASK);
-					/* VHTA1 B0-B1 */
-					ucFrMode = (((prRxStatusGroup3)->u4RxVector[0] & RX_VT_FR_MODE_MASK) >> RX_VT_FR_MODE_OFFSET);
-					ucShortGI = ((prRxStatusGroup3)->u4RxVector[0] & RX_VT_SHORT_GI) ? 1 : 0;	/* VHTA2 B0 */
-
-					/* ucRate(500kbs) = u4PhyRate(100kbps) / 5, max ucRate = 0xFF */
-					prStaRec->u2LastPhyRate = arMcsRate2PhyRate[ucMcs].u4PhyRate[ucFrMode][ucShortGI];
-				}
-			}
-		}
-
 		GLUE_SET_PKT_BSS_IDX(prSwRfb->pvPacket, secGetBssIdxByWlanIdx(prAdapter, prSwRfb->ucWlanIdx));
 
 		prRetSwRfb = qmHandleRxPackets(prAdapter, prSwRfb);
@@ -2730,7 +2649,7 @@ UINT_8 nicRxProcessGSCNEvent(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb
 *
 */
 /*----------------------------------------------------------------------------*/
-VOID nicRxProcessEventPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb, int is_wakeup)
+VOID nicRxProcessEventPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 {
 	P_CMD_INFO_T prCmdInfo;
 	/* P_MSDU_INFO_T prMsduInfo; */
@@ -2750,12 +2669,6 @@ VOID nicRxProcessEventPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb
 	if (prEvent->ucEID != EVENT_ID_DEBUG_MSG)
 		DBGLOG(RX, INFO, "RX EVENT: ID[0x%02X] SEQ[%u] LEN[%u]\n",
 		prEvent->ucEID, prEvent->ucSeqNum, prEvent->u2PacketLength);
-
-	if (is_wakeup)
-		prAdapter->wake_event_count[prEvent->ucEID]++;
-
-	if (glIsDataStatEnabled() && !kalTRxStatsPaused())
-		kalStatDrvPkts(prAdapter->prGlueInfo, FALSE, DRV_PKT_EVENT, prEvent->ucEID);
 
 	/* Event Handling */
 	switch (prEvent->ucEID) {
@@ -3222,7 +3135,7 @@ VOID nicRxProcessEventPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb
 			if (prEventBssBeaconTimeout->ucBssIndex >= BSS_INFO_NUM)
 				break;
 
-			DBGLOG(RX, WARN, "Beacon Timeout Reason: %d\n", prEventBssBeaconTimeout->ucReasonCode);
+			DBGLOG(RX, INFO, "Beacon Timeout Reason: %d\n", prEventBssBeaconTimeout->ucReasonCode);
 
 			prBssInfo = GET_BSS_INFO_BY_INDEX(prAdapter, prEventBssBeaconTimeout->ucBssIndex);
 
@@ -3390,36 +3303,19 @@ VOID nicRxProcessEventPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb
 		{
 			P_EVENT_ADD_KEY_DONE_INFO prAddKeyDone;
 			P_STA_RECORD_T prStaRec;
-			UINT_8 ucKeyId = 0;
-#if CFG_SUPPORT_REPLAY_DETECTION
-			struct GL_DETECT_REPLAY_INFO *prDetRplyInfo = NULL;
-#endif
+
 			prAddKeyDone = (P_EVENT_ADD_KEY_DONE_INFO) (prEvent->aucBuffer);
 
-			ucKeyId = prAddKeyDone->ucKeyId;
-#if CFG_SUPPORT_REPLAY_DETECTION
-			prGlueInfo = prAdapter->prGlueInfo;
-			prDetRplyInfo = &prGlueInfo->prDetRplyInfo;
-#endif
-
 			DBGLOG(RSN, TRACE,
-			       "EVENT_ID_ADD_PKEY_DONE BSSIDX=%d KeyID=%d " MACSTR "\n",
-			       prAddKeyDone->ucBSSIndex, prAddKeyDone->ucKeyId, MAC2STR(prAddKeyDone->aucStaAddr));
+			       "EVENT_ID_ADD_PKEY_DONE BSSIDX=%d " MACSTR "\n",
+			       prAddKeyDone->ucBSSIndex, MAC2STR(prAddKeyDone->aucStaAddr));
 
 			prStaRec = cnmGetStaRecByAddress(prAdapter, prAddKeyDone->ucBSSIndex, prAddKeyDone->aucStaAddr);
 
 			if (prStaRec) {
-				DBGLOG(RSN, EVENT, "STA " MACSTR " Add Key Done KeyID=%d!!\n",
-				       MAC2STR(prStaRec->aucMacAddr), ucKeyId);
+				DBGLOG(RSN, EVENT, "STA " MACSTR " Add Key Done!!\n", MAC2STR(prStaRec->aucMacAddr));
 				prStaRec->fgIsTxKeyReady = TRUE;
 				qmUpdateStaRec(prAdapter, prStaRec);
-#if CFG_SUPPORT_REPLAY_DETECTION
-				if (ucKeyId < REPLY_NUM) {
-					prDetRplyInfo->ucCurKeyId = ucKeyId;
-					prDetRplyInfo->arReplayPNInfo[ucKeyId].fgRekey = TRUE;
-					prDetRplyInfo->arReplayPNInfo[ucKeyId].fgFirstPkt = TRUE;
-				}
-#endif
 			}
 		}
 		break;
@@ -3604,19 +3500,6 @@ VOID nicRxProcessMgmtPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 
 	ucSubtype = (*(PUINT_8) (prSwRfb->pvHeader) & MASK_FC_SUBTYPE) >> OFFSET_OF_FC_SUBTYPE;
 
-	if (glIsDataStatEnabled() && !kalTRxStatsPaused())
-		kalStatDrvPkts(prAdapter->prGlueInfo, FALSE, DRV_PKT_MGMT, ucSubtype);
-
-#if CFG_SUPPORT_WAKEUP_STATISTICS
-		if (nicUpdateWakeupStatistics(prAdapter, RX_MGMT_INT) != 0) {
-			DBGLOG(RX, INFO, "mgmt frame, subtype 0x%x, on channel %d\n", ucSubtype,
-					HAL_RX_STATUS_GET_CHNL_NUM(prSwRfb->prRxStatus));
-			if (aucDebugModule[DBG_RX_IDX] & DBG_CLASS_INFO)
-				DBGLOG_MEM8(RX, INFO, (PUINT_8) prSwRfb->pvHeader,
-							(UINT_32)prSwRfb->u2PacketLen);
-		}
-#endif
-
 #if CFG_RX_PKTS_DUMP
 	{
 		P_WLAN_MAC_MGMT_HEADER_T prWlanMgmtHeader;
@@ -3677,148 +3560,6 @@ VOID nicRxProcessMgmtPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 
 	nicRxReturnRFB(prAdapter, prSwRfb);
 }
-#if CFG_SUPPORT_WAKEUP_REASON_DEBUG
-static VOID nicRxCheckWakeupReason(P_SW_RFB_T prSwRfb)
-{
-	PUINT_8 pvHeader = NULL;
-	P_HW_MAC_RX_DESC_T prRxStatus;
-	UINT_16 u2PktLen = 0;
-	UINT_32 u4HeaderOffset;
-
-	if (!prSwRfb)
-		return;
-	prRxStatus = prSwRfb->prRxStatus;
-	if (!prRxStatus)
-		return;
-	prSwRfb->ucGroupVLD = (UINT_8) HAL_RX_STATUS_GET_GROUP_VLD(prRxStatus);
-
-	switch (prSwRfb->ucPacketType) {
-	case RX_PKT_TYPE_RX_DATA:
-	{
-		UINT_16 u2Temp = 0;
-
-		u2PktLen = HAL_RX_STATUS_GET_RX_BYTE_CNT(prRxStatus);
-		u4HeaderOffset = (UINT_32) (HAL_RX_STATUS_GET_HEADER_OFFSET(prRxStatus));
-		u2Temp = sizeof(HW_MAC_RX_DESC_T);
-		if (prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_4))
-			u2Temp += sizeof(HW_MAC_RX_STS_GROUP_4_T);
-		if (prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_1))
-			u2Temp += sizeof(HW_MAC_RX_STS_GROUP_1_T);
-		if (prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_2))
-			u2Temp += sizeof(HW_MAC_RX_STS_GROUP_2_T);
-		if (prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_3))
-			u2Temp += sizeof(HW_MAC_RX_STS_GROUP_3_T);
-		pvHeader = (PUINT_8)prRxStatus + u2Temp + u4HeaderOffset;
-		u2PktLen -= u2Temp + u4HeaderOffset;
-		if (!pvHeader) {
-			glNotifyWakeups("Data Frame", WAKE_TYPE_NO_PKT_DATA);
-			DBGLOG(RX, ERROR, "data packet but pvHeader is NULL!\n");
-			break;
-		}
-		if ((prRxStatus->u2StatusFlag & (RXS_DW2_RX_nERR_BITMAP | RXS_DW2_RX_nDATA_BITMAP)) ==
-			RXS_DW2_RX_nDATA_VALUE) {
-			P_WLAN_MAC_HEADER_T prWlanMacHeader = (P_WLAN_MAC_HEADER_T)pvHeader;
-
-			if ((prWlanMacHeader->u2FrameCtrl & MASK_FRAME_TYPE) ==
-				MAC_FRAME_BLOCK_ACK_REQ) {
-				UINT_32 u4BarInfo = (prSwRfb->u2SSN | (prSwRfb->ucTid << 16));
-
-				glNotifyWakeups(&u4BarInfo, WAKE_TYPE_BAR);
-				DBGLOG(RX, WARN, "BAR frame[SSN:%d, TID:%d] wakeup host\n",
-					prSwRfb->u2SSN, prSwRfb->ucTid);
-				break;
-			}
-		}
-		u2Temp = (pvHeader[ETH_TYPE_LEN_OFFSET] << 8) | (pvHeader[ETH_TYPE_LEN_OFFSET + 1]);
-
-		switch (u2Temp) {
-		case ETH_P_IPV4:
-			KAL_MARK_WAKEUP_PKT(prSwRfb->pvPacket);
-			u2Temp = *(UINT_16 *) &pvHeader[ETH_HLEN + 4];
-			DBGLOG(RX, WARN, "IP Packet from:%d.%d.%d.%d, IP ID 0x%04x wakeup host\n",
-				pvHeader[ETH_HLEN + 12], pvHeader[ETH_HLEN + 13],
-				pvHeader[ETH_HLEN + 14], pvHeader[ETH_HLEN + 15], u2Temp);
-			break;
-		case ETH_P_ARP:
-			glNotifyWakeups(&pvHeader[ETH_HLEN], WAKE_TYPE_ARP);
-			break;
-		case ETH_P_IPV6:
-			KAL_MARK_WAKEUP_PKT(prSwRfb->pvPacket);
-			break;
-		case ETH_P_1X:
-		case ETH_P_PRE_1X:
-#if CFG_SUPPORT_WAPI
-		case ETH_WPI_1X:
-#endif
-		case ETH_P_AARP:
-		case ETH_P_IPX:
-		case 0x8100: /* VLAN */
-		case 0x890d: /* TDLS */
-			glNotifyWakeups(&u2Temp, WAKE_TYPE_1X);
-			DBGLOG(RX, WARN, "Data Packet, EthType 0x%04x wakeup host\n", u2Temp);
-			break;
-		default:
-			glNotifyWakeups(&u2Temp, WAKE_TYPE_OTHER_DATA);
-			DBGLOG(RX, WARN, "maybe abnormal data packet, EthType 0x%04x wakeup host, dump it\n",
-				u2Temp);
-			DBGLOG_MEM8(RX, INFO, pvHeader, u2PktLen > 50 ? 50:u2PktLen);
-			break;
-		}
-		break;
-	}
-	case RX_PKT_TYPE_SW_DEFINED:
-		/* HIF_RX_PKT_TYPE_EVENT */
-		if ((prSwRfb->prRxStatus->u2PktTYpe & RXM_RXD_PKT_TYPE_SW_BITMAP) == RXM_RXD_PKT_TYPE_SW_EVENT) {
-			P_WIFI_EVENT_T prEvent = (P_WIFI_EVENT_T) prSwRfb->pucRecvBuff;
-
-			glNotifyWakeups(&prEvent->ucEID, WAKE_TYPE_EVENT);
-			DBGLOG(RX, WARN, "Event 0x%02x wakeup host\n", prEvent->ucEID);
-			break;
-
-		}
-		/* case HIF_RX_PKT_TYPE_MANAGEMENT: */
-		else if ((prSwRfb->prRxStatus->u2PktTYpe & RXM_RXD_PKT_TYPE_SW_BITMAP) ==
-			 RXM_RXD_PKT_TYPE_SW_FRAME) {
-			UINT_8 ucSubtype;
-			P_WLAN_MAC_MGMT_HEADER_T prWlanMgmtHeader;
-			UINT_16 u2Temp = sizeof(HW_MAC_RX_DESC_T);
-
-			u4HeaderOffset = (UINT_32) (HAL_RX_STATUS_GET_HEADER_OFFSET(prRxStatus));
-			if (prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_4))
-				u2Temp += sizeof(HW_MAC_RX_STS_GROUP_4_T);
-			if (prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_1))
-				u2Temp += sizeof(HW_MAC_RX_STS_GROUP_1_T);
-			if (prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_2))
-				u2Temp += sizeof(HW_MAC_RX_STS_GROUP_2_T);
-			if (prSwRfb->ucGroupVLD & BIT(RX_GROUP_VLD_3))
-				u2Temp += sizeof(HW_MAC_RX_STS_GROUP_3_T);
-			pvHeader = (PUINT_8)prRxStatus + u2Temp + u4HeaderOffset;
-			if (!pvHeader) {
-				glNotifyWakeups("MGMT Frame", WAKE_TYPE_NO_PKT_DATA);
-				DBGLOG(RX, ERROR, "Mgmt Frame but pvHeader is NULL!\n");
-				break;
-			}
-			prWlanMgmtHeader = (P_WLAN_MAC_MGMT_HEADER_T)pvHeader;
-			ucSubtype = (prWlanMgmtHeader->u2FrameCtrl & MASK_FC_SUBTYPE) >>
-				OFFSET_OF_FC_SUBTYPE;
-			glNotifyWakeups(&ucSubtype, WAKE_TYPE_MGMT);
-			DBGLOG(RX, WARN, "MGMT frame subtype: %d SeqCtrl %d wakeup host\n",
-				ucSubtype, prWlanMgmtHeader->u2SeqCtrl);
-		} else {
-			glNotifyWakeups(&prSwRfb->prRxStatus->u2PktTYpe, WAKE_TYPE_INVALID_SW_DEFINED);
-			DBGLOG(RX, ERROR,
-				"[%s]ERROR: u2PktTYpe(0x%04X) is OUT OF DEF.!!!\n", __func__,
-				prSwRfb->prRxStatus->u2PktTYpe);
-			ASSERT(0);
-		}
-		break;
-	default:
-		glNotifyWakeups(&prSwRfb->ucPacketType, WAKE_TYPE_UNKNOWN);
-		DBGLOG(RX, WARN, "Unknown Packet %d wakeup host\n", prSwRfb->ucPacketType);
-		break;
-	}
-}
-#endif
 
 /*----------------------------------------------------------------------------*/
 /*!
@@ -3836,7 +3577,6 @@ VOID nicRxProcessRFBs(IN P_ADAPTER_T prAdapter)
 	QUE_T rTempRfbList;
 	P_QUE_T prTempRfbList = &rTempRfbList;
 	UINT_32 u4RxLoopCount;
-	int is_wakeup = 0;
 
 	KAL_SPIN_LOCK_DECLARATION();
 
@@ -3863,32 +3603,13 @@ VOID nicRxProcessRFBs(IN P_ADAPTER_T prAdapter)
 			while (QUEUE_IS_NOT_EMPTY(prTempRfbList)) {
 				QUEUE_REMOVE_HEAD(prTempRfbList, prSwRfb, P_SW_RFB_T);
 
-				if (!prSwRfb)
-					break;
-#if CFG_SUPPORT_WAKEUP_REASON_DEBUG
-				if (test_and_clear_bit(SUSPEND_FLAG_FOR_APP_TRX_STAT,
-				    &prAdapter->ulSuspendFlag) && kalWakeupFromSleep()) {
-					glLogSuspendResumeTime(FALSE);
-					glNotifyAppTxRx(prAdapter->prGlueInfo, NULL);
-				}
-
-				if (kalIsWakeupByWlan(prAdapter))
-					nicRxCheckWakeupReason(prSwRfb);
-#endif
-
 				switch (prSwRfb->ucPacketType) {
 				case RX_PKT_TYPE_RX_DATA:
-
 #if CFG_SUPPORT_SNIFFER
 					if (prAdapter->prGlueInfo->fgIsEnableMon) {
 						nicRxProcessMonitorPacket(prAdapter, prSwRfb);
 						break;
 					}
-#endif
-
-#if	CFG_SUPPORT_WAKEUP_STATISTICS
-					if (1 == nicUpdateWakeupStatistics(prAdapter, RX_DATA_INT))
-						glWlanSetIndicateWoWFlag();
 #endif
 					nicRxProcessDataPacket(prAdapter, prSwRfb);
 					break;
@@ -3897,12 +3618,7 @@ VOID nicRxProcessRFBs(IN P_ADAPTER_T prAdapter)
 					/* HIF_RX_PKT_TYPE_EVENT */
 					if ((prSwRfb->prRxStatus->u2PktTYpe & RXM_RXD_PKT_TYPE_SW_BITMAP) ==
 					    RXM_RXD_PKT_TYPE_SW_EVENT) {
-#if	CFG_SUPPORT_WAKEUP_STATISTICS
-						is_wakeup = nicUpdateWakeupStatistics(prAdapter, RX_EVENT_INT);
-#endif
-						nicRxProcessEventPacket(prAdapter,
-									prSwRfb,
-									is_wakeup);
+						nicRxProcessEventPacket(prAdapter, prSwRfb);
 					}
 					/* case HIF_RX_PKT_TYPE_MANAGEMENT: */
 					else if ((prSwRfb->prRxStatus->u2PktTYpe & RXM_RXD_PKT_TYPE_SW_BITMAP) ==
@@ -3922,10 +3638,6 @@ VOID nicRxProcessRFBs(IN P_ADAPTER_T prAdapter)
 				case RX_PKT_TYPE_RX_VECTOR:
 				case RX_PKT_TYPE_TM_REPORT:
 				default:
-#if	CFG_SUPPORT_WAKEUP_STATISTICS
-					nicUpdateWakeupStatistics(prAdapter, RX_OTHERS_INT);
-#endif
-
 					RX_INC_CNT(prRxCtrl, RX_TYPE_ERR_DROP_COUNT);
 					RX_INC_CNT(prRxCtrl, RX_DROP_TOTAL_COUNT);
 					DBGLOG(RX, ERROR, "ucPacketType = %d\n", prSwRfb->ucPacketType);
@@ -4176,14 +3888,14 @@ nicRxEnhanceReadBuffer(IN P_ADAPTER_T prAdapter,
 
 		/* 4 <2> if the RFB dw size or packet size is zero */
 		if (u4PktLen == 0) {
-			DBGLOG(RX, ERROR, "Packet Length = %u\n", u4PktLen);
+			DBGLOG(RX, ERROR, "Packet Length = %lu\n", u4PktLen);
 			ASSERT(0);
 			break;
 		}
 		/* 4 <3> if the packet is too large or too small */
 		/* ToDo[6630]: adjust CFG_RX_MAX_PKT_SIZE */
 		if (u4PktLen > CFG_RX_MAX_PKT_SIZE) {
-			DBGLOG(RX, TRACE, "Read RX Packet Lentgh Error (%u)\n", u4PktLen);
+			DBGLOG(RX, TRACE, "Read RX Packet Lentgh Error (%lu)\n", u4PktLen);
 			ASSERT(0);
 			break;
 		}
@@ -4292,7 +4004,7 @@ VOID nicRxSDIOAggReceiveRFBs(IN P_ADAPTER_T prAdapter)
 	P_RX_CTRL_T prRxCtrl;
 	P_SDIO_CTRL_T prSDIOCtrl;
 	P_SW_RFB_T prSwRfb = (P_SW_RFB_T) NULL;
-	UINT_32 u2PktLength;
+	UINT_32 u4RxLength;
 	UINT_32 i, rxNum;
 	UINT_32 u4RxAggCount = 0, u4RxAggLength = 0;
 	UINT_32 u4RxAvailAggLen, u4CurrAvailFreeRfbCnt;
@@ -4336,16 +4048,11 @@ VOID nicRxSDIOAggReceiveRFBs(IN P_ADAPTER_T prAdapter)
 			    (rxNum ==
 			     0 ? prEnhDataStr->rRxInfo.u.u2NumValidRx0Len : prEnhDataStr->rRxInfo.u.u2NumValidRx1Len);
 
-			if (u2RxPktNum > 16) {
-				DBGLOG(RX, ERROR, "Abnormal PktNum(%d) in RX%u, need chip reset!\n",
-				       u2RxPktNum, rxNum);
-				DBGLOG_MEM32(RX, WARN, (PUINT_32)&prEnhDataStr->rRxInfo,
-					     sizeof(prEnhDataStr->rRxInfo));
-#if CFG_CHIP_RESET_SUPPORT
-				glResetTrigger(prAdapter);
-#endif
-				return;
-			}
+			/* if this assertion happened, it is most likely a F/W bug */
+			ASSERT(u2RxPktNum <= 16);
+
+			if (u2RxPktNum > 16)
+				continue;
 
 			if (u2RxPktNum == 0)
 				continue;
@@ -4377,39 +4084,18 @@ VOID nicRxSDIOAggReceiveRFBs(IN P_ADAPTER_T prAdapter)
 			u4RxAggCount = 0;
 
 			for (i = 0; i < u2RxPktNum; i++) {
-				u2PktLength = (rxNum == 0 ?
+				u4RxLength = (rxNum == 0 ?
 					      (UINT_32) prEnhDataStr->rRxInfo.u.au2Rx0Len[i] :
 					      (UINT_32) prEnhDataStr->rRxInfo.u.au2Rx1Len[i]);
 
-				if (!u2PktLength) {
-					DBGLOG(RX, ERROR, "Abnormal PktLen(%d) in RX%u idx %u, need chip reset!\n",
-					       u2PktLength, rxNum, i);
-					DBGLOG_MEM32(RX, WARN, (PUINT_32)&prEnhDataStr->rRxInfo,
-						     sizeof(prEnhDataStr->rRxInfo));
-#if CFG_CHIP_RESET_SUPPORT
-					glResetTrigger(prAdapter);
-#endif
-					return;
-				} else if (u2PktLength > CFG_RX_MAX_PKT_SIZE) {
-					DBGLOG(RX, ERROR,
-					       "PktLen(%d) > MAX_PKT_SIZE(%d) in RX%u idx %u, try to read the header\n",
-					       u2PktLength, CFG_RX_MAX_PKT_SIZE, rxNum, i);
-					/*
-					 * Rx packet length is too large, coalescing buffer may be not enough,
-					 * at least read out the DW0 to check Rx byte count.
-					 */
-					if (ALIGN_4(u2PktLength + HIF_RX_HW_APPENDED_LEN) <= u4RxAvailAggLen)
-						u4RxAvailAggLen -= ALIGN_4(u2PktLength + HIF_RX_HW_APPENDED_LEN);
-					else
-						u4RxAvailAggLen = 0;
-
-					u4RxAggCount++;
+				if (!u4RxLength) {
+					ASSERT(0);
 					break;
 				}
 
-				if (ALIGN_4(u2PktLength + HIF_RX_HW_APPENDED_LEN) <= u4RxAvailAggLen) {
+				if (ALIGN_4(u4RxLength + HIF_RX_HW_APPENDED_LEN) < u4RxAvailAggLen) {
 					if (u4RxAggCount < u4CurrAvailFreeRfbCnt) {
-						u4RxAvailAggLen -= ALIGN_4(u2PktLength + HIF_RX_HW_APPENDED_LEN);
+						u4RxAvailAggLen -= ALIGN_4(u4RxLength + HIF_RX_HW_APPENDED_LEN);
 						u4RxAggCount++;
 					} else {
 						/* no FreeSwRfb for rx packet */
@@ -4425,16 +4111,9 @@ VOID nicRxSDIOAggReceiveRFBs(IN P_ADAPTER_T prAdapter)
 					DBGLOG(RX, ERROR,
 					       "[%s] Request_len(%d) is greater than Available_len(%d)\n",
 					       __func__,
-					       (ALIGN_4(u2PktLength + HIF_RX_HW_APPENDED_LEN)), u4RxAvailAggLen);
-#if CFG_CHIP_RESET_SUPPORT
-					if (fgResult) {
-						glResetTrigger(prAdapter);
-						fgResult = FALSE;
-					}
-#else
+					       (ALIGN_4(u4RxLength + HIF_RX_HW_APPENDED_LEN)), u4RxAvailAggLen);
 					ASSERT(0);
-#endif
-					return;
+					break;
 				}
 			}
 
@@ -4452,18 +4131,24 @@ VOID nicRxSDIOAggReceiveRFBs(IN P_ADAPTER_T prAdapter)
 
 			pucSrcAddr = prRxCtrl->pucRxCoalescingBufPtr;
 			for (i = 0; i < u4RxAggCount; i++) {
+				UINT_16 u2PktLength;
+
 				u2PktLength = (rxNum == 0 ?
 					       prEnhDataStr->rRxInfo.u.au2Rx0Len[i] :
 					       prEnhDataStr->rRxInfo.u.au2Rx1Len[i]);
 
-				if (u2PktLength > CFG_RX_MAX_PKT_SIZE) {
-					DBGLOG(RX, ERROR, "Abnormal PktLen(%d) in RX%u idx %u, RxByteCount(%d)!\n",
-					       u2PktLength, rxNum, i, ((HW_MAC_RX_DESC_T *)pucSrcAddr)->u2RxByteCount);
-					DBGLOG_MEM32(RX, ERROR, pucSrcAddr, sizeof(HW_MAC_RX_DESC_T));
-#if CFG_CHIP_RESET_SUPPORT
-					glResetTrigger(prAdapter);
-#endif
-					return;
+				if (ALIGN_4(u2PktLength + HIF_RX_HW_APPENDED_LEN) > CFG_RX_MAX_PKT_SIZE) {
+					DBGLOG(RX, ERROR,
+					       "[%s] Request_len(%d) is greater than CFG_RX_MAX_PKT_SIZE(%d)...",
+					       __func__, (ALIGN_4(u2PktLength + HIF_RX_HW_APPENDED_LEN)),
+					       CFG_RX_MAX_PKT_SIZE);
+					DBGLOG(RX, ERROR, "Drop the unexpected packet...\n");
+					DBGLOG_MEM32(RX, ERROR, pucSrcAddr,
+						     ALIGN_4(u2PktLength + HIF_RX_HW_APPENDED_LEN));
+
+					pucSrcAddr += ALIGN_4(u2PktLength + HIF_RX_HW_APPENDED_LEN);
+					RX_INC_CNT(prRxCtrl, RX_DROP_TOTAL_COUNT);
+					continue;
 				}
 
 				KAL_ACQUIRE_SPIN_LOCK(prAdapter, SPIN_LOCK_RX_FREE_QUE);
@@ -4622,10 +4307,6 @@ VOID nicProcessRxInterrupt(IN P_ADAPTER_T prAdapter)
 {
 	ASSERT(prAdapter);
 
-#if CFG_CHIP_RESET_SUPPORT
-	if (fgIsResetting || fgResetTriggered)
-		return;
-#endif
 #if CFG_SDIO_INTR_ENHANCE
 #if CFG_SDIO_RX_AGG
 	nicRxSDIOAggReceiveRFBs(prAdapter);
@@ -4849,7 +4530,7 @@ nicRxWaitResponse(IN P_ADAPTER_T prAdapter,
 		else
 			u4PktLen = (u4Value >> 16) & 0xFFFF;
 
-		DBGLOG(RX, TRACE, "i = %u, u4PktLen = %u\n", i, u4PktLen);
+		DBGLOG(RX, TRACE, "i = %lu, u4PktLen = %lu\n", i, u4PktLen);
 
 		if (u4PktLen == 0) {
 			/* timeout exceeding check */
@@ -4868,26 +4549,8 @@ nicRxWaitResponse(IN P_ADAPTER_T prAdapter,
 
 			if (u4PktLen > u4MaxRespBufferLen) {
 				DBGLOG(RX, WARN,
-			       "Not enough Event Buffer: required length = 0x%x, available buffer length = %u\n",
+			       "Not enough Event Buffer: required length = 0x%lx, available buffer length = %lu\n",
 			       u4PktLen, u4MaxRespBufferLen);
-#if (CFG_ENABLE_READ_EXTRA_4_BYTES == 1)
-#if CFG_SDIO_RX_AGG
-			HAL_PORT_RD(prAdapter,
-				ucPortIdx == 0 ? MCR_WRDR0 : MCR_WRDR1,
-				ALIGN_4(u4PktLen + 4),
-				prRxCtrl->pucRxCoalescingBufPtr, CFG_RX_COALESCING_BUFFER_SIZE);
-			DBGLOG(RX, ERROR, "Dump Response buffer, max dump len:64\n");
-			DBGLOG_MEM32(RX, ERROR, prRxCtrl->pucRxCoalescingBufPtr, u4PktLen > 64 ? 64 : u4PktLen);
-#else
-#error "Please turn on RX coalescing"
-#endif
-#else
-			HAL_PORT_RD(prAdapter,
-				ucPortIdx == 0 ? MCR_WRDR0 : MCR_WRDR1, u4MaxRespBufferLen, pucRspBuffer, u4MaxRespBufferLen);
-			DBGLOG(RX, ERROR, "Dump Response buffer, max dump len:%d\n", u4MaxRespBufferLen);
-			DBGLOG_MEM8(RX, ERROR, pucRspBuffer, u4MaxRespBufferLen);
-
-#endif
 				return WLAN_STATUS_FAILURE;
 			}
 
@@ -4912,7 +4575,7 @@ nicRxWaitResponse(IN P_ADAPTER_T prAdapter,
 				return WLAN_STATUS_FAILURE;
 			}
 
-			DBGLOG(RX, TRACE, "Dump Response buffer, length = 0x%x\n", u4PktLen);
+			DBGLOG(RX, TRACE, "Dump Response buffer, length = 0x%lx\n", u4PktLen);
 			DBGLOG_MEM8(RX, TRACE, pucRspBuffer, u4PktLen);
 
 			prEvent = (P_WIFI_EVENT_T) pucRspBuffer;

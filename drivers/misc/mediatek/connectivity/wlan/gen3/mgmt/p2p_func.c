@@ -1,15 +1,3 @@
-/*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
 #include "precomp.h"
 
 APPEND_VAR_ATTRI_ENTRY_T txAssocRspAttributesTable[] = {
@@ -250,7 +238,6 @@ VOID p2pFuncGCJoin(IN P_ADAPTER_T prAdapter, IN P_BSS_INFO_T prP2pBssInfo, IN P_
 			break;
 		}
 
-		prP2pBssInfo->eBand = prBssDesc->eBand;    /* for bandwidth decision making. */
 		prP2pJoinInfo->prTargetStaRec = prStaRec;
 		prP2pJoinInfo->fgIsJoinComplete = FALSE;
 		prP2pJoinInfo->u4BufLength = 0;
@@ -415,7 +402,7 @@ p2pFuncUpdateBssInfoForJOIN(IN P_ADAPTER_T prAdapter,
 		rlmProcessAssocRsp(prAdapter, prAssocRspSwRfb, pucIE, u2IELength);
 
 		/* 4 <4.3> Sync with firmware for BSS-INFO */
-		nicUpdateBss(prAdapter, prP2pBssInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+		nicUpdateBss(prAdapter, prP2pBssInfo->ucBssIndex);
 
 		/* 4 <4.4> *DEFER OPERATION* nicPmIndicateBssConnected() will be invoked */
 		/* inside scanProcessBeaconAndProbeResp() after 1st beacon is received */
@@ -632,7 +619,7 @@ p2pFuncStartGO(IN P_ADAPTER_T prAdapter,
 		rlmBssInitForAPandIbss(prAdapter, prBssInfo);
 
 		/* 4 <3.2> Reset HW TSF Update Mode and Beacon Mode */
-		nicUpdateBss(prAdapter, prBssInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+		nicUpdateBss(prAdapter, prBssInfo->ucBssIndex);
 
 		/* 4 <3.3> Update Beacon again for network phy type confirmed. */
 		bssUpdateBeaconContent(prAdapter, prBssInfo->ucBssIndex);
@@ -776,7 +763,7 @@ p2pFuncSwitchOPMode(IN P_ADAPTER_T prAdapter,
 
 			/* Update BSS INFO to FW. */
 			if ((fgSyncToFW) && (eOpMode != OP_MODE_ACCESS_POINT))
-				nicUpdateBss(prAdapter, prP2pBssInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+				nicUpdateBss(prAdapter, prP2pBssInfo->ucBssIndex);
 		}
 
 	} while (FALSE);
@@ -1329,7 +1316,7 @@ p2pFuncDisconnect(IN P_ADAPTER_T prAdapter,
 
 			if (eOriMediaStatus != prP2pBssInfo->eConnectionState) {
 				/* Update Disconnected state to FW. */
-				nicUpdateBss(prAdapter, prP2pBssInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+				nicUpdateBss(prAdapter, prP2pBssInfo->ucBssIndex);
 			}
 
 		}

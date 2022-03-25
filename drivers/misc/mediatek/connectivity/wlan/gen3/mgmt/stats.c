@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: stats.c#1
 */
 
@@ -118,11 +106,11 @@ static VOID statsParsePktInfo(PUINT_8 pucPkt, UINT_8 status, UINT_8 eventType)
 			u4TransID = pucBootp[4]<<24  | pucBootp[5]<<16 | pucBootp[6]<<8  | pucBootp[7];
 			switch (eventType) {
 			case EVENT_RX:
-				DBGLOG(RX, STATE, "<RX> DHCP: IPID 0x%02x, MsgType 0x%x, TransID 0x%04x\n",
+				DBGLOG(SW4, INFO, "<RX> DHCP: IPID 0x%02x, MsgType 0x%x, TransID 0x%04x\n",
 								u2IpId, pucBootp[0], u4TransID);
 				break;
 			case EVENT_TX:
-				DBGLOG(TX, STATE, "<TX> DHCP: IPID 0x%02x, MsgType 0x%x, TransID 0x%04x\n",
+				DBGLOG(SW4, INFO, "<TX> DHCP: IPID 0x%02x, MsgType 0x%x, TransID 0x%04x\n",
 								u2IpId, pucBootp[0], u4TransID);
 				break;
 			}

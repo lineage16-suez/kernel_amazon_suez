@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/mgmt/rlm_domain.c#2
 */
 
@@ -216,7 +204,7 @@ static const UINT_16 g_u2CountryGroup10[] = {
 	COUNTRY_CODE_PA, COUNTRY_CODE_VE, COUNTRY_CODE_ZM,
 
 };
-static const UINT_16 g_u2CountryGroup11[] = { COUNTRY_CODE_JO, COUNTRY_CODE_PG, COUNTRY_CODE_WW,};
+static const UINT_16 g_u2CountryGroup11[] = { COUNTRY_CODE_JO, COUNTRY_CODE_PG };
 
 static const UINT_16 g_u2CountryGroup12[] = {
 	COUNTRY_CODE_BF, COUNTRY_CODE_GY, COUNTRY_CODE_HT, COUNTRY_CODE_HN,
@@ -279,10 +267,10 @@ DOMAIN_INFO_ENTRY arSupportedRegDomains[] = {
 
 	  {115, BAND_5G, CHNL_SPAN_20, 36, 4, FALSE}
 	  ,			/* CH_SET_UNII_LOW_36_48 */
-/*	  {118, BAND_5G, CHNL_SPAN_20, 52, 4, FALSE}
-	  ,			* CH_SET_UNII_MID_52_64 */
-/*	  {121, BAND_5G, CHNL_SPAN_20, 100, 12, FALSE}
-	  ,			* CH_SET_UNII_WW_100_144 */
+	  {118, BAND_5G, CHNL_SPAN_20, 52, 4, FALSE}
+	  ,			/* CH_SET_UNII_MID_52_64 */
+	  {121, BAND_5G, CHNL_SPAN_20, 100, 12, FALSE}
+	  ,			/* CH_SET_UNII_WW_100_144 */
 	  {125, BAND_5G, CHNL_SPAN_20, 149, 5, FALSE}
 	  ,			/* CH_SET_UNII_UPPER_149_165 */
 	  {0, BAND_NULL, 0, 0, 0, FALSE}
@@ -351,12 +339,10 @@ DOMAIN_INFO_ENTRY arSupportedRegDomains[] = {
 
 	  {115, BAND_5G, CHNL_SPAN_20, 36, 4, FALSE}
 	  ,			/* CH_SET_UNII_LOW_36_48 */
-#if 0
 	  {118, BAND_5G, CHNL_SPAN_20, 52, 4, FALSE}
 	  ,			/* CH_SET_UNII_MID_52_64 */
 	  {121, BAND_5G, CHNL_SPAN_20, 100, 11, FALSE}
 	  ,			/* CH_SET_UNII_WW_100_140 */
-#endif
 	  {125, BAND_NULL, 0, 0, 0, FALSE}
 	  ,			/* CH_SET_UNII_UPPER_NA */
 	  {0, BAND_NULL, 0, 0, 0, FALSE}
@@ -368,17 +354,16 @@ DOMAIN_INFO_ENTRY arSupportedRegDomains[] = {
 	 {
 	  {81, BAND_2G4, CHNL_SPAN_5, 1, 13, FALSE}
 	  ,			/* CH_SET_2G4_1_13 */
+	  {82, BAND_2G4, CHNL_SPAN_5, 14, 1, FALSE}
+	  ,			/* CH_SET_2G4_14_14 */
 	  {115, BAND_5G, CHNL_SPAN_20, 36, 4, FALSE}
 	  ,			/* CH_SET_UNII_LOW_36_48 */
-#if 0
 	  {118, BAND_5G, CHNL_SPAN_20, 52, 4, FALSE}
 	  ,			/* CH_SET_UNII_MID_52_64 */
 	  {121, BAND_5G, CHNL_SPAN_20, 100, 11, FALSE}
 	  ,			/* CH_SET_UNII_WW_100_140 */
-#endif
 	  {125, BAND_NULL, 0, 0, 0, FALSE}
 	  ,			/* CH_SET_UNII_UPPER_NA */
-	  {0, BAND_NULL, 0, 0, 0, FALSE}
 	  }
 	 }
 	,
@@ -773,30 +758,6 @@ SUBBAND_CHANNEL_T g_rRlmSubBand[] = {
 
 };
 
-
-
-
-static const UINT_16 g_u2TxPwrRegion1[] = {
-	COUNTRY_CODE_US, COUNTRY_CODE_CA
-};
-
-static const UINT_16 g_u2TxPwrRegion2[] = {
-	COUNTRY_CODE_FR, COUNTRY_CODE_DE, COUNTRY_CODE_IT, COUNTRY_CODE_ES,
-	COUNTRY_CODE_GB, COUNTRY_CODE_FR
-};
-
-static const UINT_16 g_u2TxPwrRegion3[] = { COUNTRY_CODE_JP };
-
-
-
-TX_PWR_REGION_INFO_ENTRY arSupportedTxPwrRegion[] = {
-	{(PUINT_16) g_u2TxPwrRegion1, sizeof(g_u2TxPwrRegion1) / 2, REGION_CODE_FCC},
-	{(PUINT_16) g_u2TxPwrRegion2, sizeof(g_u2TxPwrRegion2) / 2, REGION_CODE_CE},
-	{(PUINT_16) g_u2TxPwrRegion3, sizeof(g_u2TxPwrRegion3) / 2, REGION_CODE_JP}
-};
-
-
-
 /*******************************************************************************
 *                           P R I V A T E   D A T A
 ********************************************************************************
@@ -1005,11 +966,10 @@ VOID rlmDomainSendCmd(P_ADAPTER_T prAdapter, BOOLEAN fgIsOid)
 	/* ASSERT(rStatus == WLAN_STATUS_PENDING); */
 
 	cnmMemFree(prAdapter, prCmd);
-#if 0
 #if CFG_SUPPORT_PWR_LIMIT_COUNTRY
 	rlmDomainSendPwrLimitCmd(prAdapter);
 #endif
-#endif
+
 }
 
 VOID rlmDomainPassiveScanSendCmd(P_ADAPTER_T prAdapter, BOOLEAN fgIsOid)
@@ -1187,7 +1147,7 @@ UINT_32 rlmDomainSupOperatingClassIeFill(PUINT_8 pBuf)
 BOOLEAN rlmDomainCheckChannelEntryValid(P_ADAPTER_T prAdapter, UINT_8 ucCentralCh)
 {
 	BOOLEAN fgValid = FALSE;
-	UINT_8 ucTemp = 0xFF;
+	UINT_8 ucTemp = 0;
 	UINT_8 i;
 	/*Check Power limit table channel efficient or not */
 
@@ -1859,53 +1819,3 @@ VOID rlmDomainSendPwrLimitCmd(P_ADAPTER_T prAdapter)
 
 }
 #endif
-
-BOOLEAN rlmIsValidCountryCode(UINT_16 u2Country)
-{
-	UINT_8 i = 0, j = 0;
-	P_DOMAIN_INFO_ENTRY prDomainInfo;
-
-	for (i = 0; i < sizeof(arSupportedRegDomains) / sizeof(DOMAIN_INFO_ENTRY); i++) {
-		prDomainInfo = &arSupportedRegDomains[i];
-
-		ASSERT((prDomainInfo->u4CountryNum && prDomainInfo->pu2CountryGroup) ||
-			   prDomainInfo->u4CountryNum == 0);
-
-		for (j = 0; j < prDomainInfo->u4CountryNum; j++) {
-			if (prDomainInfo->pu2CountryGroup[j] == u2Country)
-				return TRUE;
-		}
-	}
-	return FALSE;
-}
-
-
-
-UINT_16
-rlmConvertCountry2Region(
-	IN P_ADAPTER_T prAdapter,
-	IN PUINT_16 pu2CountryCode)
-{
-	UINT_16 u2RetRegionCode = REGION_CODE_WW;
-	UINT_32 i = 0, j = 0;
-	P_TX_PWR_REGION_INFO_ENTRY prRegionInfo = NULL;
-
-	for (i = 0; i < sizeof(arSupportedTxPwrRegion) / sizeof(TX_PWR_REGION_INFO_ENTRY); i++) {
-		prRegionInfo = &arSupportedTxPwrRegion[i];
-
-		for (j = 0; j < prRegionInfo->u4CountryNum; j++) {
-			if (prRegionInfo->pu2RegionGroup[j] == (*pu2CountryCode))
-				break;
-		}
-
-		if (j < prRegionInfo->u4CountryNum) {
-			u2RetRegionCode = prRegionInfo->u2RegionCode;
-			break;
-		}
-	}
-
-	return u2RetRegionCode;
-} /* rlmConvertCountry2Region */
-
-
-
