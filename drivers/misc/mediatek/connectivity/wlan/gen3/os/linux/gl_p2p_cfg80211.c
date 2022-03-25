@@ -1,16 +1,4 @@
 /*
-* Copyright (C) 2016 MediaTek Inc.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 as
-* published by the Free Software Foundation.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-* See http://www.gnu.org/licenses/gpl-2.0.html for more details.
-*/
-/*
 ** Id: @(#) gl_p2p_cfg80211.c@@
 */
 
@@ -600,7 +588,6 @@ int mtk_p2p_cfg80211_scan(struct wiphy *wiphy,
 	struct ieee80211_channel *prChannel = NULL;
 	struct cfg80211_ssid *prSsid = NULL;
 	UINT_8 ucBssIdx = 0;
-	GLUE_SPIN_LOCK_DECLARATION();
 
 	/* [---------Channel---------] [---------SSID---------][---------IE---------] */
 
@@ -619,16 +606,13 @@ int mtk_p2p_cfg80211_scan(struct wiphy *wiphy,
 
 		DBGLOG(P2P, INFO, "mtk_p2p_cfg80211_scan.\n");
 
-		GLUE_ACQUIRE_SPIN_LOCK(prGlueInfo, SPIN_LOCK_NET_DEV);
 		if (prP2pGlueInfo->prScanRequest != NULL) {
 			/* There have been a scan request on-going processing. */
 			DBGLOG(P2P, TRACE, "There have been a scan request on-going processing.\n");
-			GLUE_RELEASE_SPIN_LOCK(prGlueInfo, SPIN_LOCK_NET_DEV);
 			break;
 		}
 
 		prP2pGlueInfo->prScanRequest = request;
-		GLUE_RELEASE_SPIN_LOCK(prGlueInfo, SPIN_LOCK_NET_DEV);
 
 		/* Should find out why the n_channels so many? */
 		if (request->n_channels > MAXIMUM_OPERATION_CHANNEL_LIST) {
@@ -1558,13 +1542,6 @@ int mtk_p2p_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev, struct
 
 		if (mtk_Netdev_To_RoleIdx(prGlueInfo->prP2PInfo, dev, &ucRoleIdx) < 0)
 			break;
-
-		if (prGlueInfo->prAdapter->aprBssInfo[STA_TYPE_P2P_INDEX] &&
-			(prGlueInfo->prAdapter->aprBssInfo[STA_TYPE_P2P_INDEX]->eConnectionState
-			== PARAM_MEDIA_STATE_CONNECTED)) {
-			DBGLOG(P2P, ERROR, "Severe state error, pls check it\n");
-			return -EFAULT;
-		}
 
 		prConnReqMsg =
 		    (P_MSG_P2P_CONNECTION_REQUEST_T) cnmMemAlloc(prGlueInfo->prAdapter,

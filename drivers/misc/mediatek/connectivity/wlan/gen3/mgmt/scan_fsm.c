@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/mgmt/scan_fsm.c#2
 */
 
@@ -1539,6 +1527,7 @@ BOOLEAN scnFsmPSCNSetParam(IN P_ADAPTER_T prAdapter, IN P_CMD_SET_PSCAN_PARAM pr
 	DBGLOG(SCN, INFO, "scnFsmPSCNSetParam\n");
 	ASSERT(prAdapter);
 
+	prCmdPscnParam->u4BasePeriod = prCmdPscnParam->u4BasePeriod;
 #if 1
 	DBGLOG(SCN, INFO,
 			"rCmdPscnParam.rCmdGscnParam : u4BasePeriod[%u], ucNumScnToCache[%u],  u4BufferThreshold[%u], u4NumBuckets[%u],fgGSCN[%d] fgNLO[%d] fgBatch[%d]\n",
@@ -2054,7 +2043,6 @@ scnCombineParamsIntoPSCN(IN P_ADAPTER_T prAdapter,
 
 	memcpy(prScanInfo->prPscnParam, prCmdPscnParam, sizeof(CMD_SET_PSCAN_PARAM));
 	DBGLOG(INIT, TRACE, "scnCombineParamsIntoPSCN <----\n");
-	kalMemFree(prCmdPscnParam, VIR_MEM_TYPE, sizeof(CMD_SET_PSCAN_PARAM));
 
 	return TRUE;
 

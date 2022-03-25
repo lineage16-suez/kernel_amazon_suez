@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/mgmt/ais_fsm.c#4
 */
 
@@ -1207,7 +1195,6 @@ VOID aisInitializeConnectionSettings(IN P_ADAPTER_T prAdapter, IN P_REG_INFO_T p
 	prConnSettings->fgIsConnByBssidIssued = FALSE;
 
 	prConnSettings->fgIsConnReqIssued = FALSE;
-
 	prConnSettings->fgIsDisconnectedByNonRequest = FALSE;
 
 	prConnSettings->ucSSIDLen = 0;
@@ -1227,8 +1214,6 @@ VOID aisInitializeConnectionSettings(IN P_ADAPTER_T prAdapter, IN P_REG_INFO_T p
 	prConnSettings->eEncStatus = ENUM_ENCRYPTION_DISABLED;
 
 	prConnSettings->fgIsScanReqIssued = FALSE;
-
-	prConnSettings->fgSpecificChnl = FALSE;
 
 	/* MIB attributes */
 	prConnSettings->u2BeaconPeriod = DOT11_BEACON_PERIOD_DEFAULT;
@@ -1485,8 +1470,6 @@ VOID aisFsmStateInit_JOIN(IN P_ADAPTER_T prAdapter, P_BSS_DESC_T prBssDesc)
 	prStaRec = bssCreateStaRecFromBssDesc(prAdapter,
 					      STA_TYPE_LEGACY_AP, prAdapter->prAisBssInfo->ucBssIndex, prBssDesc);
 
-	prAisBssInfo->eOriBand = prAisBssInfo->eBand;   /* for bandwidth restore once fail. */
-	prAisBssInfo->eBand = prBssDesc->eBand; /* for bandwidth decision making. */
 	prAisFsmInfo->prTargetStaRec = prStaRec;
 
 	/* 4 <2.1> sync. to firmware domain */
@@ -1571,7 +1554,7 @@ VOID aisFsmStateInit_JOIN(IN P_ADAPTER_T prAdapter, P_BSS_DESC_T prBssDesc)
 	}
 
 	/* 4 <5> Overwrite Connection Setting for eConnectionPolicy == ANY (Used by Assoc Req) */
-	if (prConnSettings->ucSSIDLen == 0)
+	if (prBssDesc->ucSSIDLen)
 		COPY_SSID(prConnSettings->aucSSID, prConnSettings->ucSSIDLen, prBssDesc->aucSSID, prBssDesc->ucSSIDLen);
 	/* 4 <6> Send a Msg to trigger SAA to start JOIN process. */
 	prJoinReqMsg = (P_MSG_JOIN_REQ_T) cnmMemAlloc(prAdapter, RAM_TYPE_MSG, sizeof(MSG_JOIN_REQ_T));
@@ -1896,8 +1879,6 @@ VOID aisFsmSteps(IN P_ADAPTER_T prAdapter, ENUM_AIS_STATE_T eNextState)
 	ENUM_BAND_T eBand;
 	UINT_8 ucChannel;
 	UINT_16 u2ScanIELen;
-	ENUM_AIS_STATE_T eOriPreState;
-	OS_SYSTIME rCurrentTime;
 
 	BOOLEAN fgIsTransition = (BOOLEAN) FALSE;
 
@@ -1906,8 +1887,6 @@ VOID aisFsmSteps(IN P_ADAPTER_T prAdapter, ENUM_AIS_STATE_T eNextState)
 	prAisFsmInfo = &(prAdapter->rWifiVar.rAisFsmInfo);
 	prAisBssInfo = prAdapter->prAisBssInfo;
 	prConnSettings = &(prAdapter->rWifiVar.rConnSettings);
-	eOriPreState = prAisFsmInfo->ePreviousState;
-	GET_CURRENT_SYSTIME(&rCurrentTime);
 
 	do {
 
@@ -2021,17 +2000,7 @@ VOID aisFsmSteps(IN P_ADAPTER_T prAdapter, ENUM_AIS_STATE_T eNextState)
 #else
 			prBssDesc = scanSearchBssDescByPolicy(prAdapter, prAdapter->prAisBssInfo->ucBssIndex);
 #endif
-			/* every time BSS join failure count is integral multiples of SCN_BSS_JOIN_FAIL_THRESOLD,
-			we need to scan again to find if a new BSS is here in the ESS,
-			this can also avoid too frequency to retry the rejected AP */
-			if (prAisFsmInfo->ePreviousState == AIS_STATE_LOOKING_FOR ||
-				((eOriPreState == AIS_STATE_ONLINE_SCAN ||
-				eOriPreState == AIS_STATE_SCAN) && prAisFsmInfo->ePreviousState != eOriPreState)) {
-				/* if previous state is scan/online scan/looking for, don't try to scan again */
-			} else if (prBssDesc && prBssDesc->ucJoinFailureCount >= SCN_BSS_JOIN_FAIL_THRESOLD &&
-				((prBssDesc->ucJoinFailureCount - SCN_BSS_JOIN_FAIL_THRESOLD) %
-				SCN_BSS_JOIN_FAIL_THRESOLD) == 0)
-				prBssDesc = NULL;
+
 			/* we are under Roaming Condition. */
 			if (prAisBssInfo->eConnectionState == PARAM_MEDIA_STATE_CONNECTED) {
 				if (prAisFsmInfo->ucConnTrialCount > AIS_ROAMING_CONNECTION_TRIAL_LIMIT) {
@@ -2102,15 +2071,6 @@ VOID aisFsmSteps(IN P_ADAPTER_T prAdapter, ENUM_AIS_STATE_T eNextState)
 					/* increase connection trial count for infrastructure connection */
 					if (prConnSettings->eOPMode == NET_TYPE_INFRA)
 						prAisFsmInfo->ucConnTrialCount++;
-
-					if (CHECK_FOR_TIMEOUT(rCurrentTime,
-							      prAisFsmInfo->rJoinReqTime,
-							      SEC_TO_SYSTIME(AIS_JOIN_TIMEOUT))) {
-						/* temrminate join operation */
-						eNextState = AIS_STATE_JOIN_FAILURE;
-						fgIsTransition = TRUE;
-						break;
-					}
 
 					/* 4 <A> Try to SCAN */
 					if (prAisFsmInfo->fgTryScan) {
@@ -2287,38 +2247,12 @@ VOID aisFsmSteps(IN P_ADAPTER_T prAdapter, ENUM_AIS_STATE_T eNextState)
 			prScanReqMsg->u2ChannelDwellTime = 0;
 			prScanReqMsg->u2TimeoutValue = 0;
 
-#if CFG_SUPPORT_SCAN_CHANNEL_REQUEST
-			prScanReqMsg->ucChannelListNum =
-				(UINT_8)kalGetScanRequestChannelNum(prAdapter->prGlueInfo);
-#endif
 			/* check if tethering is running and need to fix on specific channel */
 			if (cnmAisInfraChannelFixed(prAdapter, &eBand, &ucChannel) == TRUE) {
 				prScanReqMsg->eScanChannel = SCAN_CHANNEL_SPECIFIED;
 				prScanReqMsg->ucChannelListNum = 1;
 				prScanReqMsg->arChnlInfoList[0].eBand = eBand;
 				prScanReqMsg->arChnlInfoList[0].ucChannelNum = ucChannel;
-			} else if ((prConnSettings->fgSpecificChnl) && (!prConnSettings->fgIsScanReqIssued)) {
-				prScanReqMsg->eScanChannel = SCAN_CHANNEL_SPECIFIED;
-				prScanReqMsg->ucChannelListNum = 1;
-				kalMemCopy(&prScanReqMsg->arChnlInfoList[0],
-						&prConnSettings->rSpecificRfChnlInfo,
-						sizeof(RF_CHANNEL_INFO_T));
-				prScanReqMsg->u2ChannelDwellTime = SCAN_ONE_CHNL_DEFAULT_DWELL_TIME;
-				prConnSettings->fgSpecificChnl = FALSE;
-				/* Disable specific channel scan when connection retry fail? */
-#if CFG_SUPPORT_SCAN_CHANNEL_REQUEST
-			} else if ((prScanReqMsg->ucChannelListNum <= MAXIMUM_OPERATION_CHANNEL_LIST) &&
-					(prScanReqMsg->ucChannelListNum != 0)) {
-
-				/* Upper layer scan request channel number is not 0. */
-				/* MAXIMUM_OPERATION_CHANNEL_LIST = 46 */
-				prScanReqMsg->eScanChannel = SCAN_CHANNEL_SPECIFIED;
-
-				/* Get Channel list. */
-				kalGetScanRequestChannelList(prAdapter->prGlueInfo,
-					prScanReqMsg->arChnlInfoList,
-					MAXIMUM_OPERATION_CHANNEL_LIST);
-#endif
 			} else if (prAdapter->aePreferBand[prAdapter->prAisBssInfo->ucBssIndex] == BAND_NULL) {
 				if (prAdapter->fgEnable5GBand == TRUE)
 					prScanReqMsg->eScanChannel = SCAN_CHANNEL_FULL;
@@ -2645,8 +2579,6 @@ VOID aisFsmRunEventScanDone(IN P_ADAPTER_T prAdapter, IN P_MSG_HDR_T prMsgHdr)
 			break;
 
 		case AIS_STATE_LOOKING_FOR:
-			cnmTimerStopTimer(prAdapter, &prAisFsmInfo->rScanDoneTimer);
-			scanReportBss2Cfg80211(prAdapter, BSS_TYPE_INFRASTRUCTURE, NULL);
 #if CFG_SUPPORT_ROAMING
 			eNextState = aisFsmRoamingScanResultsUpdate(prAdapter);
 #else
@@ -3000,15 +2932,6 @@ enum _ENUM_AIS_STATE_T aisFsmJoinCompleteAction(IN struct _ADAPTER_T *prAdapter,
 				    (aucP2pSsid, CTIA_MAGIC_SSID_LEN, prAisBssInfo->aucSSID, prAisBssInfo->ucSSIDLen)) {
 					nicEnterCtiaMode(prAdapter, TRUE, FALSE);
 				}
-#if CFG_SUPPORT_ROAMING
-#ifndef CONFIG_CFG80211_ALLOW_RECONNECT
-				if (prAdapter->rWifiVar.rConnSettings.eConnectionPolicy == CONNECT_BY_BSSID &&
-					prAdapter->rWifiVar.rConnSettings.fgIsConnByBssidIssued) {
-					prAdapter->rWifiVar.rConnSettings.eConnectionPolicy = CONNECT_BY_SSID_BEST_RSSI;
-					prAdapter->rWifiVar.rConnSettings.fgIsConnByBssidIssued = FALSE;
-				}
-#endif
-#endif
 			}
 
 #if CFG_SUPPORT_ROAMING
@@ -3024,10 +2947,6 @@ enum _ENUM_AIS_STATE_T aisFsmJoinCompleteAction(IN struct _ADAPTER_T *prAdapter,
 		}
 		/* 4 <2> JOIN was not successful */
 		else {
-
-			/* Bandwidth restore once fail. */
-			prAisBssInfo->eBand = prAisBssInfo->eOriBand;
-
 			/* 4 <2.1> Redo JOIN process with other Auth Type if possible */
 			if (aisFsmStateInit_RetryJOIN(prAdapter, prStaRec) == FALSE) {
 				struct _BSS_DESC_T *prBssDesc;
@@ -3044,10 +2963,7 @@ enum _ENUM_AIS_STATE_T aisFsmJoinCompleteAction(IN struct _ADAPTER_T *prAdapter,
 				/* 3.2 reset local variable */
 				prAisFsmInfo->fgIsInfraChannelFinished = TRUE;
 
-				if (prAisFsmInfo->prTargetBssDesc)
-					prBssDesc = prAisFsmInfo->prTargetBssDesc;
-				else
-					prBssDesc = scanSearchBssDescByBssid(prAdapter, prStaRec->aucMacAddr);
+				prBssDesc = scanSearchBssDescByBssid(prAdapter, prStaRec->aucMacAddr);
 
 				if (prBssDesc == NULL)
 					break;
@@ -3284,7 +3200,7 @@ VOID aisFsmRunEventFoundIBSSPeer(IN P_ADAPTER_T prAdapter, IN P_MSG_HDR_T prMsgH
 				prStaRec->fgIsMerging = FALSE;
 
 				/* 4 <1.6> sync. to firmware */
-				nicUpdateBss(prAdapter, prAdapter->prAisBssInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+				nicUpdateBss(prAdapter, prAdapter->prAisBssInfo->ucBssIndex);
 
 				/* 4 <1.7> Indicate Connected Event to Host immediately. */
 				aisIndicationOfMediaStateToHost(prAdapter, PARAM_MEDIA_STATE_CONNECTED, FALSE);
@@ -3602,11 +3518,6 @@ VOID aisUpdateBssInfoForJOIN(IN P_ADAPTER_T prAdapter, P_STA_RECORD_T prStaRec, 
 	prAisBssInfo->u2ATIMWindow = 0;
 
 	prAisBssInfo->ucBeaconTimeoutCount = AIS_BEACON_TIMEOUT_COUNT_INFRA;
-#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
-	prAisBssInfo->ucRoamSkipTimes = ROAMING_ONE_AP_SKIP_TIMES_INITIAL;
-	prAisBssInfo->fgGoodRcpiArea = FALSE;
-	prAisBssInfo->fgPoorRcpiArea = FALSE;
-#endif
 
 	/* 4 <4.2> Update HT information and set channel */
 	/* Record HT related parameters in rStaRec and rBssInfo
@@ -3615,7 +3526,7 @@ VOID aisUpdateBssInfoForJOIN(IN P_ADAPTER_T prAdapter, P_STA_RECORD_T prStaRec, 
 	rlmProcessAssocRsp(prAdapter, prAssocRspSwRfb, pucIE, u2IELength);
 
 	/* 4 <4.3> Sync with firmware for BSS-INFO */
-	nicUpdateBss(prAdapter, prAdapter->prAisBssInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+	nicUpdateBss(prAdapter, prAdapter->prAisBssInfo->ucBssIndex);
 
 	/* 4 <4.4> *DEFER OPERATION* nicPmIndicateBssConnected() will be invoked */
 	/* inside scanProcessBeaconAndProbeResp() after 1st beacon is received */
@@ -3697,7 +3608,7 @@ VOID aisUpdateBssInfoForCreateIBSS(IN P_ADAPTER_T prAdapter)
 	rlmBssInitForAPandIbss(prAdapter, prAisBssInfo);
 
 	/* 4 <3.2> use command packets to inform firmware */
-	nicUpdateBss(prAdapter, prAdapter->prAisBssInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+	nicUpdateBss(prAdapter, prAdapter->prAisBssInfo->ucBssIndex);
 
 	/* 4 <3.3> enable beaconing */
 	bssUpdateBeaconContent(prAdapter, prAdapter->prAisBssInfo->ucBssIndex);
@@ -3824,7 +3735,7 @@ VOID aisUpdateBssInfoForMergeIBSS(IN P_ADAPTER_T prAdapter, IN P_STA_RECORD_T pr
 	rlmBssInitForAPandIbss(prAdapter, prAisBssInfo);
 
 	/* 4 <5.3> use command packets to inform firmware */
-	nicUpdateBss(prAdapter, prAdapter->prAisBssInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+	nicUpdateBss(prAdapter, prAdapter->prAisBssInfo->ucBssIndex);
 
 	/* 4 <5.4> enable beaconing */
 	bssUpdateBeaconContent(prAdapter, prAdapter->prAisBssInfo->ucBssIndex);
@@ -3949,7 +3860,6 @@ VOID aisFsmDisconnect(IN P_ADAPTER_T prAdapter, IN BOOLEAN fgDelayIndication)
 
 			/* trials for re-association */
 			if (fgDelayIndication) {
-				GET_CURRENT_SYSTIME(&(prAdapter->rWifiVar.rAisFsmInfo.rJoinReqTime));
 				aisFsmIsRequestPending(prAdapter, AIS_REQUEST_RECONNECT, TRUE);
 				aisFsmInsertRequest(prAdapter, AIS_REQUEST_RECONNECT);
 			}
@@ -3972,7 +3882,7 @@ VOID aisFsmDisconnect(IN P_ADAPTER_T prAdapter, IN BOOLEAN fgDelayIndication)
 		aisChangeMediaState(prAdapter, PARAM_MEDIA_STATE_DISCONNECTED);
 
 		/* 4 <4.1> sync. with firmware */
-		nicUpdateBss(prAdapter, prAdapter->prAisBssInfo->ucBssIndex, STA_REC_EXCLUDE_NONE);
+		nicUpdateBss(prAdapter, prAdapter->prAisBssInfo->ucBssIndex);
 	}
 
 	if (!fgDelayIndication) {
@@ -4243,7 +4153,6 @@ VOID aisTest(VOID)
 
 	/* Set Connection Request Issued Flag */
 	prConnSettings->fgIsConnReqIssued = TRUE;
-
 	prConnSettings->ucSSIDLen = ucSSIDLen;
 	kalMemCopy(prConnSettings->aucSSID, aucSSID, ucSSIDLen);
 
@@ -4567,8 +4476,6 @@ VOID aisBssBeaconTimeout(IN P_ADAPTER_T prAdapter)
 	/* 4 <2> invoke abort handler */
 	if (fgDoAbortIndication) {
 		prConnSettings->fgIsDisconnectedByNonRequest = FALSE;
-		/* In case we need indicate disconnect before timeout. */
-		prAisBssInfo->u2DeauthReason = REASON_CODE_BEACON_TIMEOUT;
 		aisFsmStateAbort(prAdapter, DISCONNECT_REASON_CODE_RADIO_LOST, TRUE);
 	}
 
@@ -4742,17 +4649,15 @@ VOID aisFsmRoamingDisconnectPrevAP(IN P_ADAPTER_T prAdapter, IN P_STA_RECORD_T p
 	/* rlmBssAborted(prAdapter, prAisBssInfo); */
 
 	/* 4 <3> Unset the fgIsConnected flag of BSS_DESC_T and send Deauth if needed. */
-	scanRemoveConnFlagOfBssDescByBssid(prAdapter, prAisBssInfo->aucBSSID);
-
-	/* Update BSSID before disconnect current AP, showing that it is roaming case. */
-	COPY_MAC_ADDR(prAisBssInfo->aucBSSID, prTargetStaRec->aucMacAddr);
+	if (PARAM_MEDIA_STATE_CONNECTED == prAisBssInfo->eConnectionState)
+		scanRemoveConnFlagOfBssDescByBssid(prAdapter, prAisBssInfo->aucBSSID);
 
 	/* 4 <4> Change Media State immediately. */
 	aisChangeMediaState(prAdapter, PARAM_MEDIA_STATE_DISCONNECTED);
 
 	/* 4 <4.1> sync. with firmware */
 	prTargetStaRec->ucBssIndex = (MAX_BSS_INDEX + 1);	/* Virtial BSSID */
-	nicUpdateBss(prAdapter, prAdapter->prAisBssInfo->ucBssIndex, prTargetStaRec->ucIndex);
+	nicUpdateBss(prAdapter, prAdapter->prAisBssInfo->ucBssIndex);
 	prTargetStaRec->ucBssIndex = prAdapter->prAisBssInfo->ucBssIndex;
 
 }				/* end of aisFsmRoamingDisconnectPrevAP() */

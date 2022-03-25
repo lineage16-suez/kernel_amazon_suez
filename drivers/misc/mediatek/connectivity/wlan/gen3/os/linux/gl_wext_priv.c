@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/os/linux/gl_wext_priv.c#8
 */
 
@@ -593,12 +581,6 @@ static WLAN_REQ_ENTRY arWlanOidReqTable[] = {
 	 NULL}
 	,
 
-	{OID_CUSTOM_SET_RESETCOUNTER,
-	 DISP_STRING("OID_CUSTOM_SET_RESETCOUNTER"),
-	 FALSE, FALSE, ENUM_OID_DRIVER_CORE, 0,
-	 NULL,
-	 (PFN_OID_HANDLER_FUNC_REQ) wlanoidSetResetCounter}
-	,
 #if CFG_SUPPORT_WAPI
 	{OID_802_11_WAPI_MODE,
 	 DISP_STRING("OID_802_11_WAPI_MODE"),
@@ -849,7 +831,6 @@ priv_set_int(IN struct net_device *prNetDev,
 	UINT_32 u4BufLen = 0;
 	int status = 0;
 	P_PTA_IPC_T prPtaIpc;
-	unsigned char dtim_skip_count = 0;
 
 	ASSERT(prNetDev);
 	ASSERT(prIwReqInfo);
@@ -1084,28 +1065,7 @@ priv_set_int(IN struct net_device *prNetDev,
 		break;
 
 #endif
-	case PRIV_CMD_SET_RESETCOUNTER:
-		prNdisReq = (P_NDIS_TRANSPORT_STRUCT)&aucOidBuf[0];
 
-		prNdisReq->ndisOidCmd = OID_CUSTOM_SET_RESETCOUNTER;
-
-		prNdisReq->inNdisOidlength = 0;
-		prNdisReq->outNdisOidLength = 0;
-
-		/* Execute this OID */
-		status = priv_set_ndis(prNetDev, prNdisReq, &u4BufLen);
-		break;
-	case PRIV_CMD_DTIM_SKIP_COUNT:
-		dtim_skip_count = (unsigned char)pu4IntBuf[1];
-		if (prGlueInfo->prAdapter &&
-		    dtim_skip_count >= 0 &&
-		    dtim_skip_count <= 6) {
-			prGlueInfo->prAdapter->dtim_skip_count =
-				dtim_skip_count;
-		} else {
-			status = -EINVAL;
-		}
-		break;
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -1255,22 +1215,6 @@ priv_get_int(IN struct net_device *prNetDev,
 		prIwReqData->mode = 0;
 		return status;
 
-	case PRIV_CMD_SHOW_CHANNEL:
-	{
-		UINT_32 freq;
-
-		status = wlanQueryInformation(prGlueInfo->prAdapter, wlanoidQueryFrequency,
-			&freq, sizeof(UINT_32), &u4BufLen);
-		if (status == 0)
-			prIwReqData->mode = freq/1000; /* Hz->MHz */
-
-		return status;
-	}
-	case PRIV_CMD_DTIM_SKIP_COUNT:
-		if (prGlueInfo->prAdapter)
-			prIwReqData->mode =
-				prGlueInfo->prAdapter->dtim_skip_count;
-		return status;
 	default:
 		break;
 	}
@@ -1683,24 +1627,6 @@ priv_get_struct(IN struct net_device *prNetDev,
 	UINT_32 u4BufLen = 0;
 	PUINT_32 pu4IntBuf = NULL;
 	int status = 0;
-	static UINT_8 aucBuffer[512];
-	static UINT_8 aucBuffer2[512];
-	UINT_8 *p_buffer = NULL;
-	P_CMD_SW_DBG_CTRL_T pSwDbgCtrl;
-	INT_32 i4Rssi = 0;
-	UINT_32 u4Rate = 0;
-	int n, pos = 0;
-	PARAM_MAC_ADDRESS arBssid;
-	PARAM_SSID_T ssid;
-	int i = 0;
-	P_BSS_INFO_T prBssInfo = NULL;
-	P_RX_CTRL_T prRxCtrl = NULL;
-	PARAM_GET_STA_STA_STATISTICS rQueryStaStatistics;
-	WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
-	P_STA_RECORD_T prStaRec = NULL;
-	INT_8 noise = 0;
-	char buf[512];
-	P_WAKEUP_STATISTIC *prWakeupSta = NULL;
 
 	kalMemZero(&aucOidBuf[0], sizeof(aucOidBuf));
 
@@ -1760,14 +1686,9 @@ priv_get_struct(IN struct net_device *prNetDev,
 		pu4IntBuf = (PUINT_32) prIwReqData->data.pointer;
 		prNdisReq = (P_NDIS_TRANSPORT_STRUCT) &aucOidBuf[0];
 
-		if (prIwReqData->data.length > (sizeof(aucOidBuf) - OFFSET_OF(NDIS_TRANSPORT_STRUCT, ndisOidContent))) {
-			DBGLOG(REQ, INFO, "priv_get_struct() exceeds length limit\n");
-			return -EFAULT;
-		}
-
 		if (copy_from_user(&prNdisReq->ndisOidContent[0],
-				   prIwReqData->data.pointer,
-				   prIwReqData->data.length)) {
+					prIwReqData->data.pointer,
+					prIwReqData->data.length)) {
 			DBGLOG(REQ, INFO, "priv_get_struct() copy_from_user oidBuf fail\n");
 			return -EFAULT;
 		}
@@ -1786,262 +1707,6 @@ priv_get_struct(IN struct net_device *prNetDev,
 			}
 		}
 		return 0;
-	case PRIV_CMD_STAT:
-	{
-		pSwDbgCtrl = (P_CMD_SW_DBG_CTRL_T)aucBuffer;
-		p_buffer = &aucBuffer2[0];
-
-		prRxCtrl = &prGlueInfo->prAdapter->rRxCtrl;
-
-		kalMemZero(arBssid, MAC_ADDR_LEN);
-		kalMemZero(&rQueryStaStatistics, sizeof(rQueryStaStatistics));
-
-		if (kalIoctl(prGlueInfo, wlanoidQueryBssid,
-			     &arBssid[0], sizeof(arBssid),
-			     TRUE, TRUE, TRUE,
-			     &u4BufLen) == WLAN_STATUS_SUCCESS) {
-
-			COPY_MAC_ADDR(rQueryStaStatistics.aucMacAddr, arBssid);
-			rQueryStaStatistics.ucReadClear = TRUE;
-
-			rStatus = kalIoctl(prGlueInfo, wlanoidQueryStaStatistics,
-					   &rQueryStaStatistics, sizeof(rQueryStaStatistics),
-					   TRUE, FALSE, TRUE,
-					   &u4BufLen);
-		}
-
-		if (kalIoctl(prGlueInfo, wlanoidQueryDbgCntr,
-			     (PVOID)aucBuffer, sizeof(UINT_8) * 512,
-			     TRUE, TRUE, TRUE,
-			     &u4BufLen) == WLAN_STATUS_SUCCESS) {
-
-			if (pSwDbgCtrl && prRxCtrl) {
-				if (pSwDbgCtrl->u4Data == SWCR_DBG_TYPE_ALL) {
-					n = sprintf(&p_buffer[pos],
-						    "Tx success = %d\n",
-						    rQueryStaStatistics.u4TransmitCount);
-					pos += n;
-					n = sprintf(&p_buffer[pos],
-						    "Tx retry count = %d\n",
-						    pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_TX_RETRY_CNT]);
-					pos += n;
-					n = sprintf(&p_buffer[pos],
-						    "Tx fail to Rcv ACK after retry = %d\n",
-						    rQueryStaStatistics.u4TxFailCount +
-						    rQueryStaStatistics.u4TxLifeTimeoutCount);
-					pos += n;
-					n = sprintf(&p_buffer[pos],
-						    "Rx success = %d\n",
-						    RX_GET_CNT(prRxCtrl, RX_MPDU_TOTAL_COUNT));
-					pos += n;
-					n = sprintf(&p_buffer[pos],
-						    "Rx with CRC = %d\n",
-						    pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_RX_FCSERR_CNT]);
-					pos += n;
-					n = sprintf(&p_buffer[pos],
-						    "Rx drop due to out of resource = %d\n",
-						    pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_RX_FIFOFULL_CNT]);
-					pos += n;
-					n = sprintf(&p_buffer[pos],
-						    "Rx duplicate frame = %d\n",
-						    RX_GET_CNT(prRxCtrl, RX_DUP_DROP_COUNT));
-					pos += n;
-					n = sprintf(&p_buffer[pos],
-						    "False CCA(total) =\n");
-					pos += n;
-					n = sprintf(&p_buffer[pos],
-						    "False CCA(one-second) =\n");
-					pos += n;
-				}
-			}
-		}
-
-		if (kalIoctl(prGlueInfo, wlanoidQueryRssi, &i4Rssi, sizeof(i4Rssi),
-				TRUE, TRUE, TRUE, &u4BufLen) == WLAN_STATUS_SUCCESS) {
-			prStaRec = cnmGetStaRecByAddress(prGlueInfo->prAdapter,
-							 prGlueInfo->prAdapter->prAisBssInfo->ucBssIndex,
-							 prGlueInfo->prAdapter->rWlanInfo.rCurrBssId.arMacAddress);
-			if (prStaRec)
-				noise = prStaRec->noise_avg - 127;
-
-			n = sprintf(&p_buffer[pos], "RSSI = %d\n", i4Rssi);
-			pos += n;
-			n = sprintf(&p_buffer[pos], "P2P GO RSSI =\n");
-			pos += n;
-			n = sprintf(&p_buffer[pos], "SNR-A =\n");
-			pos += n;
-			n = sprintf(&p_buffer[pos], "SNR-B (if available) =\n");
-			pos += n;
-			n = sprintf(&p_buffer[pos], "NoiseLevel-A = %d\n", noise);
-			pos += n;
-			n = sprintf(&p_buffer[pos], "NoiseLevel-B =\n");
-			pos += n;
-		}
-
-		status = kalIoctl(prGlueInfo, wlanoidQueryLinkSpeed, &u4Rate,
-						sizeof(u4Rate), TRUE, TRUE, TRUE, &u4BufLen);
-
-		/* STA stats */
-		if (kalIoctl(prGlueInfo, wlanoidQueryBssid,
-			     &arBssid[0], sizeof(arBssid),
-			     TRUE, TRUE, TRUE,
-			     &u4BufLen) == WLAN_STATUS_SUCCESS) {
-
-			prBssInfo =
-				&(prGlueInfo->prAdapter->rWifiVar.arBssInfoPool[KAL_NETWORK_TYPE_AIS_INDEX]);
-
-			kalIoctl(prGlueInfo, wlanoidQuerySsid,
-				 &ssid, sizeof(ssid),
-				 TRUE, TRUE, TRUE,
-				 &u4BufLen);
-
-			n = sprintf(&p_buffer[pos], "\n[STA] connected AP MAC Address = ");
-			pos += n;
-
-			for (i = 0; i < PARAM_MAC_ADDR_LEN; i++) {
-
-				n = sprintf(&p_buffer[pos], "%02x", arBssid[i]);
-				pos += n;
-				if (i != PARAM_MAC_ADDR_LEN - 1) {
-
-					n = sprintf(&p_buffer[pos], ":");
-					pos += n;
-				}
-			}
-			n = sprintf(&p_buffer[pos], "\n");
-			pos += n;
-
-			n = sprintf(&p_buffer[pos], "PhyMode:");
-			pos += n;
-			switch (prBssInfo->ucPhyTypeSet) {
-			case PHY_TYPE_SET_802_11B:
-				n = sprintf(&p_buffer[pos], "802.11b\n");
-				pos += n;
-				break;
-			case PHY_TYPE_SET_802_11ABG:
-			case PHY_TYPE_SET_802_11BG:
-				n = sprintf(&p_buffer[pos], "802.11g\n");
-				pos += n;
-				break;
-			case PHY_TYPE_SET_802_11A:
-				n = sprintf(&p_buffer[pos], "802.11a\n");
-				pos += n;
-				break;
-			case PHY_TYPE_SET_802_11ABGN:
-			case PHY_TYPE_SET_802_11BGN:
-			case PHY_TYPE_SET_802_11AN:
-			case PHY_TYPE_SET_802_11GN:
-				n = sprintf(&p_buffer[pos], "802.11n\n");
-				pos += n;
-				break;
-			case PHY_TYPE_SET_802_11ABGNAC:
-			case PHY_TYPE_SET_802_11ANAC:
-			case PHY_TYPE_SET_802_11AC:
-				n = sprintf(&p_buffer[pos], "802.11ac\n");
-				pos += n;
-				break;
-			default:
-				break;
-			}
-
-			n = sprintf(&p_buffer[pos], "RSSI =\n");
-			pos += n;
-			n = sprintf(&p_buffer[pos], "Last TX Rate = %d\n", u4Rate*100);
-			pos += n;
-
-			if (prStaRec) {
-				n = sprintf(&p_buffer[pos], "Last RX Rate = %d\n",
-					prStaRec->u2LastPhyRate * 100000);
-			} else {
-				n = sprintf(&p_buffer[pos], "Last RX Rate =\n");
-			}
-			pos += n;
-		} else {
-			n = sprintf(&p_buffer[pos], "\n[STA] Not connected\n");
-			pos += n;
-		}
-
-		DBGLOG(REQ, INFO, "%s() stat length %d\n", __func__, pos);
-
-		if (copy_to_user(prIwReqData->data.pointer, &aucBuffer2[0], pos + 1)) {
-			DBGLOG(REQ, ERROR, "%s() copy_to_user() fail\n", __func__);
-			return -EFAULT;
-		} else
-			return 0;
-	}
-	case PRIV_CMD_CONNSTATUS:
-	{
-		PARAM_MAC_ADDRESS arBssid;
-		PARAM_SSID_T ssid;
-		char buffer[128];
-		char *pc;
-		WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
-		int i, n;
-
-		kalMemZero(arBssid, MAC_ADDR_LEN);
-		rStatus = kalIoctl(prGlueInfo, wlanoidQueryBssid,
-				   &arBssid[0], sizeof(arBssid),
-				   TRUE, TRUE, TRUE,
-				   &u4BufLen);
-
-		kalMemZero(buffer, 128);
-		pc = &buffer[0];
-		if (rStatus == WLAN_STATUS_SUCCESS) {
-			kalIoctl(prGlueInfo, wlanoidQuerySsid,
-				 &ssid, sizeof(ssid),
-				 TRUE, TRUE, TRUE,
-				 &u4BufLen);
-
-			n = sprintf(pc, "connStatus: Connected (AP: %s [", ssid.aucSsid);
-			pc += n;
-
-			for (i = 0; i < PARAM_MAC_ADDR_LEN; i++) {
-				n = sprintf(pc, "%02x", arBssid[i]);
-				pc += n;
-				if (i != PARAM_MAC_ADDR_LEN - 1) {
-					n = sprintf(pc, ":");
-					pc += n;
-				}
-			}
-			n = sprintf(pc, "])");
-		} else
-			n = sprintf(pc, "connStatus: Not connected");
-
-		if (copy_to_user(prIwReqData->data.pointer, &buffer[0], 128))
-			return -EFAULT;
-		else
-			return status;
-	}
-	case PRIV_CMD_INT_STAT:
-		kalMemZero(buf, 512);
-
-		prWakeupSta = prGlueInfo->prAdapter->arWakeupStatistic;
-		pos += snprintf(buf, sizeof(buf),
-				"Abnormal Interrupt:%d\n"
-				"Software Interrupt:%d\n"
-				"TX Interrupt:%d\n"
-				"RX data:%d\n"
-				"RX Event:%d\n"
-				"RX mgmt:%d\n"
-				"RX others:%d\n",
-				prWakeupSta[0].u2Count,
-				prWakeupSta[1].u2Count,
-				prWakeupSta[2].u2Count,
-				prWakeupSta[3].u2Count,
-				prWakeupSta[4].u2Count,
-				prWakeupSta[5].u2Count,
-				prWakeupSta[6].u2Count);
-		for (i = 0; i < EVENT_ID_END; i++) {
-			if (prGlueInfo->prAdapter->wake_event_count[i] > 0)
-				pos += snprintf(buf + pos, sizeof(buf) - pos,
-						"RX EVENT[0x%0x]:%d\n", i,
-						prGlueInfo->prAdapter->wake_event_count[i]);
-		}
-
-		if (copy_to_user(prIwReqData->data.pointer, &buf[0], sizeof(buf)))
-			return -EFAULT;
-		else
-			return status;
 	default:
 		DBGLOG(REQ, WARN, "get struct cmd:0x%lx\n", u4SubCmd);
 		return -EOPNOTSUPP;
@@ -3358,21 +3023,10 @@ int priv_driver_set_country(IN struct net_device *prNetDev, IN char *pcCommand, 
 		aucCountry[0] = apcArgv[1][0];
 		aucCountry[1] = apcArgv[1][1];
 
-		if ('X' == aucCountry[0] && 'X' == aucCountry[1])
-			aucCountry[0] = aucCountry[1] = 'W';
 		rStatus = kalIoctl(prGlueInfo, wlanoidSetCountryCode, &aucCountry[0], 2, FALSE, FALSE, TRUE, &u4BufLen);
 
 		if (rStatus != WLAN_STATUS_SUCCESS)
 			return -1;
-		rStatus = kalIoctl(prGlueInfo, wlanoidUpdatePowerTable, &aucCountry[0], 2, FALSE, FALSE, TRUE, &u4BufLen);
-		if (rStatus != WLAN_STATUS_SUCCESS) {
-			DBGLOG(INIT, INFO, "failed update power table: %c%c\n", aucCountry[0], aucCountry[1]);
-			return -EINVAL;
-		}
-		/*Indicate channel change notificaiton to wpa_supplicant via cfg80211*/
-		if ('W' == aucCountry[0] && 'W' == aucCountry[1])
-			aucCountry[0] = aucCountry[1] = 'X';
-		wlanRegulatoryHint(&aucCountry[0]);
 	}
 	return 0;
 }

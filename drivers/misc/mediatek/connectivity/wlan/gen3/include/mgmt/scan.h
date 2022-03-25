@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: @(#)
 */
 
@@ -331,10 +319,6 @@
 /*! Maximum buffer size of SCAN list */
 #define SCN_MAX_BUFFER_SIZE                 (CFG_MAX_NUM_BSS_LIST * ALIGN_4(sizeof(BSS_DESC_T)))
 
-#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
-#define SCN_ROAM_MAX_BUFFER_SIZE		(CFG_MAX_NUM_ROAM_BSS_LIST * ALIGN_4(sizeof(ROAM_BSS_DESC_T)))
-#endif
-
 #define SCN_RM_POLICY_EXCLUDE_CONNECTED     BIT(0)	/* Remove SCAN result except the connected one. */
 #define SCN_RM_POLICY_TIMEOUT               BIT(1)	/* Remove the timeout one */
 #define SCN_RM_POLICY_OLDEST_HIDDEN         BIT(2)	/* Remove the oldest one with hidden ssid */
@@ -349,10 +333,6 @@
 						 * If exceed this value, remove weakest BSS_DESC_T
 						 * with same SSID first in large network.
 						 */
-#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
-#define REMOVE_TIMEOUT_TWO_DAY     (60*60*24*2)
-#endif
-
 #if 1
 #define SCN_BSS_DESC_REMOVE_TIMEOUT_SEC     30
 #define SCN_BSS_DESC_STALE_SEC				10	/* 2.4G + 5G need 8.1s */
@@ -404,7 +384,12 @@
 
 #define SCAN_NLO_CHECK_SSID_ONLY    0x00000001
 #define SCAN_NLO_DEFAULT_INTERVAL           30000
-#define SCAN_ONE_CHNL_DEFAULT_DWELL_TIME	150
+
+#define SWC_NUM_BSSID_THRESHOLD_DEFAULT 8
+#define SWC_RSSI_WINDSIZE_DEFAULT 8
+#define LOST_AP_WINDOW 16
+#define MAX_CHANNEL_NUM_PER_BUCKETS 8
+
 /*******************************************************************************
 *                             D A T A   T Y P E S
 ********************************************************************************
@@ -576,14 +561,7 @@ struct _BSS_DESC_T {
 	UINT_8 ucJoinFailureCount;
 	OS_SYSTIME rJoinFailTime;
 };
-#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
-struct _ROAM_BSS_DESC_T {
-	LINK_ENTRY_T rLinkEntry;
-	UINT_8 ucSSIDLen;
-	UINT_8 aucSSID[ELEM_MAX_LEN_SSID];
-	OS_SYSTIME rUpdateTime;
-};
-#endif
+
 typedef struct _SCAN_PARAM_T {	/* Used by SCAN FSM */
 	/* Active or Passive */
 	ENUM_SCAN_TYPE_T eScanType;
@@ -681,11 +659,6 @@ typedef struct _SCAN_INFO_T {
 	LINK_T rFreeBSSDescList;
 
 	LINK_T rPendingMsgList;
-#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
-	UINT_8 aucScanRoamBuffer[SCN_ROAM_MAX_BUFFER_SIZE];
-	LINK_T rRoamFreeBSSDescList;
-	LINK_T rRoamBSSDescList;
-#endif
 
 	/* Sparse Channel Detection */
 	BOOLEAN fgIsSparseChannelValid;
@@ -908,13 +881,6 @@ P_BSS_DESC_T scanSearchBssDescByPolicy(IN P_ADAPTER_T prAdapter, IN UINT_8 ucBss
 WLAN_STATUS scanAddScanResult(IN P_ADAPTER_T prAdapter, IN P_BSS_DESC_T prBssDesc, IN P_SW_RFB_T prSwRfb);
 
 VOID scanReportBss2Cfg80211(IN P_ADAPTER_T prAdapter, IN ENUM_BSS_TYPE_T eBSSType, IN P_BSS_DESC_T SpecificprBssDesc);
-#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
-P_ROAM_BSS_DESC_T scanSearchRoamBssDescBySsid(IN P_ADAPTER_T prAdapter, IN P_BSS_DESC_T prBssDesc);
-P_ROAM_BSS_DESC_T scanAllocateRoamBssDesc(IN P_ADAPTER_T prAdapter);
-VOID scanAddToRoamBssDesc(IN P_ADAPTER_T prAdapter, IN P_BSS_DESC_T prBssDesc);
-VOID scanSearchBssDescOfRoamSsid(IN P_ADAPTER_T prAdapter);
-VOID scanRemoveRoamBssDescsByTime(IN P_ADAPTER_T prAdapter, IN UINT_32 u4RemoveTime);
-#endif
 /*----------------------------------------------------------------------------*/
 /* Routines in scan_fsm.c                                                     */
 /*----------------------------------------------------------------------------*/
@@ -981,13 +947,6 @@ P_BSS_DESC_T scanSearchBssDescByBssidAndLatestUpdateTime(IN P_ADAPTER_T prAdapte
 
 #if CFG_SUPPORT_AGPS_ASSIST
 VOID scanReportScanResultToAgps(P_ADAPTER_T prAdapter);
-#endif
-
-#if AMZN_5GHZ_PREF
-VOID scanSet5gRoamingPreference(INT_32 rangeHi, INT_32 rangeMed,
-	INT_32 rangeLow, UINT_8 pref5gHi, UINT_8 pref5gMed, UINT_8 pref5gLo);
-VOID scanGet5gRoamingPreference(PINT_32 rangeHi, PINT_32 rangeMed,
-	PINT_32 rangeLow, PUINT_8 pref5gHi, PUINT_8 pref5gMed, PUINT_8 pref5gLo);
 #endif
 
 BOOLEAN scnFsmPSCNAction(IN P_ADAPTER_T prAdapter, IN UINT_8 ucPscanAct);

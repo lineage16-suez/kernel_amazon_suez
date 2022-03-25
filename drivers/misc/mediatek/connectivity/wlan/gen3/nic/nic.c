@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/nic/nic.c#4
 */
 
@@ -895,14 +883,14 @@ static IST_EVENT_FUNCTION apfnEventFuncTable[] = {
  */
 #define LOCAL_NIC_ALLOCATE_MEMORY(pucMem, u4Size, eMemType, pucComment) \
 	{ \
-		DBGLOG(INIT, TRACE, "Allocating %ld bytes for %s.\n", u4Size, pucComment); \
+		DBGLOG(MEM, TRACE, "Allocating %ld bytes for %s.\n", u4Size, pucComment); \
 		pucMem = (PUINT_8)kalMemAlloc(u4Size, eMemType); \
 		if (pucMem == (PUINT_8)NULL) { \
-			DBGLOG(INIT, ERROR, "Could not allocate %ld bytes for %s.\n", u4Size, pucComment); \
+			DBGLOG(MEM, ERROR, "Could not allocate %ld bytes for %s.\n", u4Size, pucComment); \
 			break; \
 		} \
 		ASSERT(((ULONG)pucMem % 4) == 0); \
-		DBGLOG(INIT, TRACE, "Virtual Address = 0x%p for %s.\n", (ULONG)pucMem, pucComment); \
+		DBGLOG(MEM, LOUD, "Virtual Address = 0x%p for %s.\n", (ULONG)pucMem, pucComment); \
 	}
 
 /*******************************************************************************
@@ -1218,14 +1206,14 @@ VOID nicSDIOReadIntStatus(IN P_ADAPTER_T prAdapter, OUT PUINT_32 pu4IntStatus)
 	prSDIOCtrl = prAdapter->prSDIOCtrl;
 	ASSERT(prSDIOCtrl);
 
+	HAL_PORT_RD(prAdapter,
+		    MCR_WHISR,
+		    sizeof(ENHANCE_MODE_DATA_STRUCT_T), (PUINT_8) prSDIOCtrl, sizeof(ENHANCE_MODE_DATA_STRUCT_T));
+
 	if (kalIsCardRemoved(prAdapter->prGlueInfo) == TRUE || fgIsBusAccessFailed == TRUE) {
 		*pu4IntStatus = 0;
 		return;
 	}
-
-	HAL_PORT_RD(prAdapter,
-		    MCR_WHISR,
-		    sizeof(ENHANCE_MODE_DATA_STRUCT_T), (PUINT_8) prSDIOCtrl, sizeof(ENHANCE_MODE_DATA_STRUCT_T));
 
 	/* workaround */
 	if ((prSDIOCtrl->u4WHISR & WHISR_TX_DONE_INT) == 0 && (prSDIOCtrl->rTxInfo.au4WTSR[0]
@@ -1492,9 +1480,6 @@ VOID nicProcessAbnormalInterrupt(IN P_ADAPTER_T prAdapter)
 	UINT_32 u4Value = 0;
 
 	HAL_MCR_RD(prAdapter, MCR_WASR, &u4Value);
-#if CFG_SUPPORT_WAKEUP_STATISTICS
-	nicUpdateWakeupStatistics(prAdapter, ABNORMAL_INT);
-#endif
 	DBGLOG(REQ, WARN, "MCR_WASR: 0x%lx\n", u4Value);
 #if CFG_CHIP_RESET_SUPPORT
 	glResetTrigger(prAdapter);
@@ -1537,10 +1522,6 @@ VOID nicProcessSoftwareInterrupt(IN P_ADAPTER_T prAdapter)
 		glSendResetRequest();
 #endif
 	}
-
-#if CFG_SUPPORT_WAKEUP_STATISTICS
-		nicUpdateWakeupStatistics(prAdapter, SOFTWARE_INT);
-#endif
 
 	DBGLOG(REQ, WARN, "u4IntrBits: 0x%lx\n", u4IntrBits);
 
@@ -2253,7 +2234,7 @@ WLAN_STATUS nicDeactivateNetwork(IN P_ADAPTER_T prAdapter, IN UINT_8 ucBssIndex)
 * @retval -
 */
 /*----------------------------------------------------------------------------*/
-WLAN_STATUS nicUpdateBss(IN P_ADAPTER_T prAdapter, IN UINT_8 ucBssIndex, UINT_8 ucStaRecIndexExcluded)
+WLAN_STATUS nicUpdateBss(IN P_ADAPTER_T prAdapter, IN UINT_8 ucBssIndex)
 {
 	WLAN_STATUS u4Status;
 	P_BSS_INFO_T prBssInfo;
@@ -2378,7 +2359,7 @@ WLAN_STATUS nicUpdateBss(IN P_ADAPTER_T prAdapter, IN UINT_8 ucBssIndex, UINT_8 
 		DBGLOG(BSS, TRACE, "nicUpdateBss for disconnect state\n");
 #endif
 		/* free all correlated station records */
-		cnmStaFreeAllStaByNetwork(prAdapter, ucBssIndex, ucStaRecIndexExcluded);
+		cnmStaFreeAllStaByNetwork(prAdapter, ucBssIndex, STA_REC_EXCLUDE_NONE);
 		qmFreeAllByBssIdx(prAdapter, ucBssIndex);
 		kalClearSecurityFramesByBssIdx(prAdapter->prGlueInfo, ucBssIndex);
 #if CFG_ENABLE_GTK_FRAME_FILTER
@@ -4406,24 +4387,3 @@ BOOLEAN nicIsEcoVerEqualOrLaterTo(UINT_8 ucEcoVer)
 
 	return TRUE;
 }
-
-#if CFG_SUPPORT_WAKEUP_STATISTICS
-INT_32 nicUpdateWakeupStatistics(P_ADAPTER_T prAdapter, WAKEUP_TYPE intType)
-{
-	P_WAKEUP_STATISTIC *prWakeupSta = &prAdapter->arWakeupStatistic[intType];
-	if (glWlanGetSuspendFlag() == 0)
-		return 0;
-	prWakeupSta->u2Count++;
-	glWlanClearSuspendFlag();
-	if (prWakeupSta->u2Count % 100 == 0) {
-		OS_SYSTIME rCurrent;
-		if (prWakeupSta->u2Count > 0) {
-			GET_CURRENT_SYSTIME(&rCurrent);
-			prWakeupSta->u2TimePerHundred = rCurrent-prWakeupSta->rStartTime;
-		}
-		GET_CURRENT_SYSTIME(&prWakeupSta->rStartTime)
-		DBGLOG(RX, INFO, "wakeup frequency: %d", prWakeupSta->u2TimePerHundred);
-	}
-	return 1;
-}
-#endif

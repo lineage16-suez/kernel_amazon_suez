@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/os/linux/gl_init.c#11
 */
 
@@ -781,8 +769,6 @@
 #include "gl_kal.h"
 #endif
 #include "gl_vendor.h"
-#include <linux/of.h>
-#include <linux/power_supply.h>
 /*******************************************************************************
 *                              C O N S T A N T S
 ********************************************************************************
@@ -790,13 +776,6 @@
 /* #define MAX_IOREQ_NUM   10 */
 struct semaphore g_halt_sem;
 int g_u4HaltFlag = 0;
-#ifdef CONFIG_IDME
-#define IDME_OF_MAC_ADDR	"/idme/mac_addr"
-#define IDME_OF_WIFI_MFG        "/idme/wifi_mfg"
-#define IDME_OF_BOARD_ID	"/idme/board_id"
-#define BOARD_ID_SUEZ_STR "0028"
-char idme_board_id[16];
-#endif
 
 static struct wireless_dev *gprWdev;
 /*******************************************************************************
@@ -979,8 +958,6 @@ static const UINT_32 mtk_cipher_suites[] = {
 };
 
 static struct cfg80211_ops mtk_wlan_ops = {
-	.suspend = mtk_cfg80211_suspend,
-	.resume = mtk_cfg80211_resume,
 	.change_virtual_intf = mtk_cfg80211_change_iface,
 	.add_key = mtk_cfg80211_add_key,
 	.get_key = mtk_cfg80211_get_key,
@@ -1001,8 +978,8 @@ static struct cfg80211_ops mtk_wlan_ops = {
 	.set_pmksa = mtk_cfg80211_set_pmksa,
 	.del_pmksa = mtk_cfg80211_del_pmksa,
 	.flush_pmksa = mtk_cfg80211_flush_pmksa,
-#if CFG_ENABLE_GTK_FRAME_FILTER
-	.set_rekey_data = mtk_cfg80211_set_rekey_data,/* set the flag to enable GTK OFFLOAD */
+#ifdef CONFIG_SUPPORT_GTK_REKEY
+	.set_rekey_data = mtk_cfg80211_set_rekey_data,
 #endif
 	.assoc = mtk_cfg80211_assoc,
 
@@ -1169,207 +1146,6 @@ static const struct ieee80211_txrx_stypes
 					}
 };
 
-#if AMZN_PWR_TABLE_ENABLE
-#define COUNTRY_PWR_TBL(_alpha2, \
-			_cck, \
-			_ofdm_bpsk, _ofdm_qpsk, _ofdm_16qam, _ofdm_48m, _ofdm_54m, \
-			_ht20_bpsk, _ht20_qpsk, _ht20_16qam, _ht20_mcs5, _ht20_mcs6, _ht20_mcs7, \
-			_ht40_bpsk, _ht40_qpsk, _ht40_16qam, _ht40_mcs5, _ht40_mcs6, _ht40_mcs7, \
-			_ofdm_bpsk_5g, _ofdm_qpsk_5g, _ofdm_16qam_5g, _ofdm_48m_5g, _ofdm_54m_5g, \
-			_ht20_bpsk_5g, _ht20_qpsk_5g, _ht20_16qam_5g, _ht20_mcs5_5g, _ht20_mcs6_5g, _ht20_mcs7_5g, \
-			_ht40_bpsk_5g, _ht40_qpsk_5g, _ht40_16qam_5g, _ht40_mcs5_5g, _ht40_mcs6_5g, _ht40_mcs7_5g, \
-			_edge_enabled, _edge_cck, _edge_ofdm_20m, _edge_ofdm_40m, \
-			_support_5g, \
-			_ofdm_bpsk_ac, _ofdm_qpsk_ac, _ofdm_16qam_ac,  _mcs5_6_ac, _mcs_7_ac, _mcs_8_ac, _mcs_9_ac, \
-			_vht40_offset, _vht80_offset, _vht160_offset, \
-			_edge_enabled_5g, _edge_ofdm_20m_5g, _edge_ofdm_40m_5g, _edge_ofdm_80m_5g) { \
-	.auCountryCode = (_alpha2), \
-	.rTxPwr.cTxPwr2G4Cck = (_cck), \
-	.rTxPwr.cTxPwr2G4OFDM_BPSK = (_ofdm_bpsk), \
-	.rTxPwr.cTxPwr2G4OFDM_QPSK = (_ofdm_qpsk), \
-	.rTxPwr.cTxPwr2G4OFDM_16QAM = (_ofdm_16qam), \
-	.rTxPwr.cTxPwr2G4OFDM_48Mbps = (_ofdm_48m), \
-	.rTxPwr.cTxPwr2G4OFDM_54Mbps = (_ofdm_54m), \
-	.rTxPwr.cTxPwr2G4HT20_BPSK = (_ht20_bpsk), \
-	.rTxPwr.cTxPwr2G4HT20_QPSK = (_ht20_qpsk), \
-	.rTxPwr.cTxPwr2G4HT20_16QAM = (_ht20_16qam), \
-	.rTxPwr.cTxPwr2G4HT20_MCS5 = (_ht20_mcs5), \
-	.rTxPwr.cTxPwr2G4HT20_MCS6 = (_ht20_mcs6), \
-	.rTxPwr.cTxPwr2G4HT20_MCS7 = (_ht20_mcs7), \
-	.rTxPwr.cTxPwr2G4HT40_BPSK = (_ht40_bpsk), \
-	.rTxPwr.cTxPwr2G4HT40_QPSK = (_ht40_qpsk), \
-	.rTxPwr.cTxPwr2G4HT40_16QAM = (_ht40_16qam), \
-	.rTxPwr.cTxPwr2G4HT40_MCS5 = (_ht40_mcs5), \
-	.rTxPwr.cTxPwr2G4HT40_MCS6 = (_ht40_mcs6), \
-	.rTxPwr.cTxPwr2G4HT40_MCS7 = (_ht40_mcs7), \
-	.rTxPwr.cTxPwr5GOFDM_BPSK = (_ofdm_bpsk_5g), \
-	.rTxPwr.cTxPwr5GOFDM_QPSK = (_ofdm_qpsk_5g), \
-	.rTxPwr.cTxPwr5GOFDM_16QAM = (_ofdm_16qam_5g), \
-	.rTxPwr.cTxPwr5GOFDM_48Mbps = (_ofdm_48m_5g), \
-	.rTxPwr.cTxPwr5GOFDM_54Mbps = (_ofdm_54m_5g), \
-	.rTxPwr.cTxPwr5GHT20_BPSK = (_ht20_bpsk_5g), \
-	.rTxPwr.cTxPwr5GHT20_QPSK = (_ht20_qpsk_5g), \
-	.rTxPwr.cTxPwr5GHT20_16QAM = (_ht20_16qam_5g), \
-	.rTxPwr.cTxPwr5GHT20_MCS5 = (_ht20_mcs5_5g), \
-	.rTxPwr.cTxPwr5GHT20_MCS6 = (_ht20_mcs6_5g), \
-	.rTxPwr.cTxPwr5GHT20_MCS7 = (_ht20_mcs7_5g), \
-	.rTxPwr.cTxPwr5GHT40_BPSK = (_ht40_bpsk_5g), \
-	.rTxPwr.cTxPwr5GHT40_QPSK = (_ht40_qpsk_5g), \
-	.rTxPwr.cTxPwr5GHT40_16QAM = (_ht40_16qam_5g), \
-	.rTxPwr.cTxPwr5GHT40_MCS5 = (_ht40_mcs5_5g), \
-	.rTxPwr.cTxPwr5GHT40_MCS6 = (_ht40_mcs6_5g), \
-	.rTxPwr.cTxPwr5GHT40_MCS7 = (_ht40_mcs7_5g), \
-	.ucTxPwrValid = 1, \
-	.r2GBandEdgePwr.fg2G4BandEdgePwrUsed = (_edge_enabled), \
-	.r2GBandEdgePwr.cBandEdgeMaxPwrCCK = (_edge_cck), \
-	.r2GBandEdgePwr.cBandEdgeMaxPwrOFDM20 = (_edge_ofdm_20m), \
-	.r2GBandEdgePwr.cBandEdgeMaxPwrOFDM40 = (_edge_ofdm_40m), \
-	.ucSupport5GBand = (_support_5g), \
-	.r11AcTxPwr.c11AcTxPwr_BPSK = (_ofdm_bpsk_ac), \
-	.r11AcTxPwr.c11AcTxPwr_QPSK = (_ofdm_qpsk_ac), \
-	.r11AcTxPwr.c11AcTxPwr_16QAM = (_ofdm_16qam_ac), \
-	.r11AcTxPwr.c11AcTxPwr_MCS5_MCS6 = (_mcs5_6_ac), \
-	.r11AcTxPwr.c11AcTxPwr_MCS7 = (_mcs_7_ac), \
-	.r11AcTxPwr.c11AcTxPwr_MCS8 = (_mcs_8_ac), \
-	.r11AcTxPwr.c11AcTxPwr_MCS9 = (_mcs_9_ac), \
-	.r11AcTxPwr.c11AcTxPwrVht40_OFFSET = (_vht40_offset), \
-	.r11AcTxPwr.c11AcTxPwrVht80_OFFSET = (_vht80_offset), \
-	.r11AcTxPwr.c11AcTxPwrVht160_OFFSET = (_vht160_offset), \
-	.uc11AcTxPwrValid = 1, \
-	.r5GBandEdgePwr.uc5GBandEdgePwrUsed = (_edge_enabled_5g), \
-	.r5GBandEdgePwr.c5GBandEdgeMaxPwrOFDM20 = (_edge_ofdm_20m_5g), \
-	.r5GBandEdgePwr.c5GBandEdgeMaxPwrOFDM40 = (_edge_ofdm_40m_5g), \
-	.r5GBandEdgePwr.c5GBandEdgeMaxPwrOFDM80 = (_edge_ofdm_80m_5g), \
-}
-
-static COUNTRY_POWER_TABLE asCountryPwrTbl[] = {
-	COUNTRY_PWR_TBL("WW", /* country code */
-			0x1D, /* CCK */
-			0x1C, 0x1C, 0x1C, 0x1C, 0x1C, /* OFDM */
-			0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, /* HT20 */
-			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* HT40 */
-			0x1B, 0x1B, 0x1B, 0x1B, 0x1B, /* 5G_OFDM */
-			0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, /* 5G_HT20 */
-			0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E, /* 5G_HT40 */
-			0x1, 0x1C, 0x1B, 0x00, /* 2.4G band edge */
-			0x1, /* 5G support */
-			0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, /* AC */
-			0xFE, 0xFE, 0xFE, /* VHT_OFFSET */
-			0x1, 0x1B, 0x1E, 0x1B), /* 5G band edge */
-	COUNTRY_PWR_TBL("US", /* country code */
-			0x1D, /* CCK */
-			0x1C, 0x1C, 0x1C, 0x1C, 0x1C, /* OFDM */
-			0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, /* HT20 */
-			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* HT40 */
-			0x1B, 0x1B, 0x1B, 0x1B, 0x1B, /* 5G_OFDM */
-			0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, /* 5G_HT20 */
-			0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E, /* 5G_HT40 */
-			0x1, 0x1C, 0x1B, 0x00, /* 2.4G band edge */
-			0x1, /* 5G support */
-			0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, /* AC */
-			0xFE, 0xFE, 0xFE, /* VHT_OFFSET */
-			0x1, 0x1B, 0x1E, 0x1B), /* 5G band edge */
-	COUNTRY_PWR_TBL("EU", /* country code */
-			0x1D, /* CCK */
-			0x1C, 0x1C, 0x1C, 0x1C, 0x1C, /* OFDM */
-			0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, /* HT20 */
-			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* HT40 */
-			0x1B, 0x1B, 0x1B, 0x1B, 0x1B, /* 5G_OFDM */
-			0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, /* 5G_HT20 */
-			0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E, /* 5G_HT40 */
-			0x1, 0x1C, 0x1B, 0x00, /* 2.4G band edge */
-			0x1, /* 5G support */
-			0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, /* AC */
-			0xFE, 0xFE, 0xFE, /* VHT_OFFSET */
-			0x1, 0x1B, 0x1E, 0x1B), /* 5G band edge */
-	COUNTRY_PWR_TBL("JP", /* country code */
-			0x1D, /* CCK */
-			0x1C, 0x1C, 0x1C, 0x1C, 0x1C, /* OFDM */
-			0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, /* HT20 */
-			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* HT40 */
-			0x1B, 0x1B, 0x1B, 0x1B, 0x1B, /* 5G_OFDM */
-			0x1C, 0x1C, 0x1C, 0x1C, 0x1C, 0x1C, /* 5G_HT20 */
-			0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E, /* 5G_HT40 */
-			0x1, 0x1C, 0x1B, 0x00, /* 2.4G band edge */
-			0x1, /* 5G support */
-			0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, /* AC */
-			0xFE, 0xFE, 0xFE, /* VHT_OFFSET */
-			0x1, 0x1B, 0x1E, 0x1B), /* 5G band edge */
-};
-
-static COUNTRY_POWER_TABLE power_table_suez[] = {
-	COUNTRY_PWR_TBL("WW", /* country code */
-			0x1A, /* CCK */
-			0x1A, 0x1A, 0x1A, 0x1A, 0x1A, /* OFDM */
-			0x18, 0x18, 0x18, 0x18, 0x18, 0x18, /* HT20 */
-			0x26, 0x26, 0x26, 0x26, 0x26, 0x24, /* HT40 */
-			0x1A, 0x1A, 0x1A, 0x1A, 0x1A, /* 5G_OFDM */
-			0x1A, 0x1A, 0x1A, 0x1A, 0x1A, 0x1A, /* 5G_HT20 */
-			0x1A, 0x1A, 0x1A, 0x1A, 0x1A, 0x1A, /* 5G_HT40 */
-			0x0, 0x1B, 0x1B, 0x1B, /* 2.4G band edge */
-			0x1, /* 5G support */
-			0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, /* AC */
-			0x0, 0x0, 0xFE, /* VHT_OFFSET */
-			0x0, 0x20, 0x22, 0x00), /* 5G band edge */
-	COUNTRY_PWR_TBL("US", /* country code */
-			0x1A, /* CCK */
-			0x1A, 0x1A, 0x1A, 0x1A, 0x1A, /* OFDM */
-			0x18, 0x18, 0x18, 0x18, 0x18, 0x18, /* HT20 */
-			0x26, 0x26, 0x26, 0x26, 0x26, 0x24, /* HT40 */
-			0x1A, 0x1A, 0x1A, 0x1A, 0x1A, /* 5G_OFDM */
-			0x1A, 0x1A, 0x1A, 0x1A, 0x1A, 0x1A, /* 5G_HT20 */
-			0x1A, 0x1A, 0x1A, 0x1A, 0x1A, 0x1A, /* 5G_HT40 */
-			0x0, 0x1B, 0x1B, 0x1B, /* 2.4G band edge */
-			0x1, /* 5G support */
-			0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, /* AC */
-			0x0, 0x0, 0xFE, /* VHT_OFFSET */
-			0x0, 0x20, 0x22, 0x00), /* 5G band edge */
-	COUNTRY_PWR_TBL("CA", /* country code */
-			0x1A, /* CCK */
-			0x1A, 0x1A, 0x1A, 0x1A, 0x1A, /* OFDM */
-			0x18, 0x18, 0x18, 0x18, 0x18, 0x18, /* HT20 */
-			0x26, 0x26, 0x26, 0x26, 0x26, 0x24, /* HT40 */
-			0x1A, 0x1A, 0x1A, 0x1A, 0x1A, /* 5G_OFDM */
-			0x1A, 0x1A, 0x1A, 0x1A, 0x1A, 0x1A, /* 5G_HT20 */
-			0x1A, 0x1A, 0x1A, 0x1A, 0x1A, 0x1A, /* 5G_HT40 */
-			0x0, 0x1B, 0x1B, 0x1B, /* 2.4G band edge */
-			0x1, /* 5G support */
-			0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, /* AC */
-			0x0, 0x0, 0xFE, /* VHT_OFFSET */
-			0x0, 0x20, 0x22, 0x00), /* 5G band edge */
-	COUNTRY_PWR_TBL("EU", /* country code */
-			0x1E, /* CCK */
-			0x1E, 0x1E, 0x1E, 0x1E, 0x1E, /* OFDM */
-			0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E, /* HT20 */
-			0x26, 0x26, 0x26, 0x26, 0x26, 0x24, /* HT40 */
-			0x1E, 0x1E, 0x1E, 0x1E, 0x1E, /* 5G_OFDM */
-			0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E, /* 5G_HT20 */
-			0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E, /* 5G_HT40 */
-			0x0, 0x1B, 0x1B, 0x1B, /* 2.4G band edge */
-			0x1, /* 5G support */
-			0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, /* AC */
-			0x00, 0x00, 0xFE, /* VHT_OFFSET */
-			0x0, 0x20, 0x22, 0x00), /* 5G band edge */
-	COUNTRY_PWR_TBL("JP", /* country code */
-			0x1E, /* CCK */
-			0x1E, 0x1E, 0x1E, 0x1E, 0x1E, /* OFDM */
-			0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E, /* HT20 */
-			0x26, 0x26, 0x26, 0x26, 0x26, 0x24, /* HT40 */
-			0x1E, 0x1E, 0x1E, 0x1E, 0x1E, /* 5G_OFDM */
-			0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E, /* 5G_HT20 */
-			0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E, /* 5G_HT40 */
-			0x0, 0x1B, 0x1B, 0x1B, /* 2.4G band edge */
-			0x1, /* 5G support */
-			0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, /* AC */
-			0x00, 0x00, 0xFE, /* VHT_OFFSET */
-			0x0, 0x20, 0x22, 0x00), /* 5G band edge */
-};
-
-struct board_id_power_table_map board_id_power_table_list[] = {
-	{BOARD_ID_SUEZ_STR, power_table_suez, ARRAY_SIZE(power_table_suez)},
-};
-#endif
-
 #ifdef CONFIG_PM
 static const struct wiphy_wowlan_support mtk_wlan_wowlan_support = {
 	.flags = WIPHY_WOWLAN_DISCONNECT | WIPHY_WOWLAN_ANY,
@@ -1470,9 +1246,6 @@ static void glLoadNvram(IN P_GLUE_INFO_T prGlueInfo, OUT P_REG_INFO_T prRegInfo)
 		kalCfgDataRead16(prGlueInfo, OFFSET_OF(WIFI_CFG_PARAM_STRUCT, aucCountryCode[0]), (PUINT_16) aucTmp);
 
 		/* cast to wide characters */
-		if (('X' == aucTmp[0] && 'X' == aucTmp[1]) ||
-			(0 == aucTmp[0] && 0 == aucTmp[1]))
-			aucTmp[0] = aucTmp[1] = 'W';
 		prRegInfo->au2CountryCode[0] = (UINT_16) aucTmp[0];
 		prRegInfo->au2CountryCode[1] = (UINT_16) aucTmp[1];
 
@@ -1948,17 +1721,7 @@ VOID wlanDebugInit(VOID)
 		aucDebugModule[i] = DBG_CLASS_ERROR |
 		    DBG_CLASS_WARN | DBG_CLASS_STATE | DBG_CLASS_EVENT | DBG_CLASS_INFO;
 	}
-	aucDebugModule[DBG_TX_IDX] &= ~(DBG_CLASS_EVENT | DBG_CLASS_TRACE | DBG_CLASS_INFO);
-	aucDebugModule[DBG_RX_IDX] &= ~(DBG_CLASS_EVENT | DBG_CLASS_TRACE | DBG_CLASS_INFO);
-	aucDebugModule[DBG_REQ_IDX] &= ~(DBG_CLASS_EVENT | DBG_CLASS_TRACE | DBG_CLASS_INFO);
-	aucDebugModule[DBG_INIT_IDX] &= ~(DBG_CLASS_TRACE | DBG_CLASS_INFO);
-	aucDebugModule[DBG_RLM_IDX] &= ~(DBG_CLASS_TRACE);
-	aucDebugModule[DBG_BOW_IDX] &= ~(DBG_CLASS_TRACE | DBG_CLASS_INFO);
-	aucDebugModule[DBG_QM_IDX] &= ~(DBG_CLASS_TRACE);
-	/* Some Cisco APs set 100ms timeout in WPA 4-way handshake. Reduce some logging */
-	aucDebugModule[DBG_SW4_IDX] &= ~(DBG_CLASS_INFO);
 	aucDebugModule[DBG_INTR_IDX] = 0;
-	aucDebugModule[DBG_MEM_IDX] = DBG_CLASS_ERROR | DBG_CLASS_WARN;
 #endif /* DBG */
 
 	LOG_FUNC("Reset ALL DBG module log level to DEFAULT!");
@@ -2045,22 +1808,9 @@ static void wlanUninit(struct net_device *prDev)
 /*----------------------------------------------------------------------------*/
 static int wlanOpen(struct net_device *prDev)
 {
-	P_GLUE_INFO_T prGlueInfo = NULL;
-
 	ASSERT(prDev);
-	if (!prDev)
-		return -ENXIO;
-
-	prGlueInfo = *((P_GLUE_INFO_T *) netdev_priv(prDev));
 
 	netif_tx_start_all_queues(prDev);
-
-	/* Initialize arWakeupStatistic */
-	kalMemSet(prGlueInfo->prAdapter->arWakeupStatistic, 0,
-		  sizeof(prGlueInfo->prAdapter->arWakeupStatistic));
-	/* Initialize wake_event_count */
-	kalMemSet(prGlueInfo->prAdapter->wake_event_count, 0,
-		  sizeof(prGlueInfo->prAdapter->wake_event_count));
 
 	return 0;		/* success */
 }				/* end of wlanOpen() */
@@ -2231,49 +1981,6 @@ VOID wlanUpdateChannelTable(P_GLUE_INFO_T prGlueInfo)
 
 /*----------------------------------------------------------------------------*/
 /*!
- * \brief Update Channel table for cfg80211 for Wi-Fi Direct based on current country code
- *
- * \param[in] prGlueInfo      Pointer to glue info
- *
- * \return   none
- */
-/*----------------------------------------------------------------------------*/
-P_COUNTRY_POWER_TABLE wlanGetUpdatedPowerTable(P_UINT_8 paucCountry)
-{
-#if AMZN_PWR_TABLE_ENABLE
-	UINT_8 i = 0;
-	COUNTRY_POWER_TABLE *country_pwr_tbl = asCountryPwrTbl;
-	int pwr_tbl_size = ARRAY_SIZE(asCountryPwrTbl);
-
-	if (NULL == paucCountry)
-		return NULL;
-
-	DBGLOG(INIT, INFO, "aucCountry:%c%c\n", paucCountry[0], paucCountry[1]);
-
-	for (i = 0; i < ARRAY_SIZE(board_id_power_table_list); i++) {
-		if (!strncmp(idme_board_id, board_id_power_table_list[i].board_id,
-			     strlen(board_id_power_table_list[i].board_id))) {
-			country_pwr_tbl = board_id_power_table_list[i].power_table;
-			pwr_tbl_size = board_id_power_table_list[i].tbl_size;
-			DBGLOG(INIT, INFO, "board_id:%s\n", board_id_power_table_list[i].board_id);
-			break;
-		}
-	}
-
-	for (i = 0; i < pwr_tbl_size; i++) {
-		if (paucCountry[0] == country_pwr_tbl[i].auCountryCode[0] &&
-		    paucCountry[1] == country_pwr_tbl[i].auCountryCode[1])
-			return &country_pwr_tbl[i];
-	}
-
-	return NULL;
-#else
-	return NULL;
-#endif
-}
-
-/*----------------------------------------------------------------------------*/
-/*!
 * \brief Register the device to the kernel and return the index.
 *
 * \param[in] prDev      Pointer to struct net_device.
@@ -2385,11 +2092,6 @@ static void createWirelessDevice(void)
 		DBGLOG(INIT, ERROR, "Allocating memory to wireless_dev context failed\n");
 		return;
 	}
-
-	/* initialize semaphore for halt */
-	sema_init(&g_halt_sem, 1);
-	g_u4HaltFlag = 1;
-
 	/* 4 <1.2> Create wiphy */
 	prWiphy = wiphy_new(&mtk_wlan_ops, sizeof(GLUE_INFO_T));
 	if (!prWiphy) {
@@ -2398,7 +2100,7 @@ static void createWirelessDevice(void)
 	}
 	/* 4 <1.3> configure wireless_dev & wiphy */
 	prWdev->iftype = NL80211_IFTYPE_STATION;
-	prWiphy->max_scan_ssids = 4;	/* Current driver max capability is only 4 */
+	prWiphy->max_scan_ssids = 1;	/* FIXME: for combo scan */
 	prWiphy->max_scan_ie_len = 512;
 	prWiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_ADHOC);
 	prWiphy->bands[IEEE80211_BAND_2GHZ] = &mtk_band_2ghz;
@@ -2523,7 +2225,7 @@ static struct wireless_dev *wlanNetCreate(PVOID pvData)
 	    alloc_netdev_mq(sizeof(NETDEV_PRIVATE_GLUE_INFO), NIC_INF_NAME,
 				NET_NAME_PREDICTABLE, ether_setup, CFG_MAX_TXQ_NUM);
 
-	DBGLOG(INIT, TRACE, "net_device prDev(0x%p) allocated\n", prGlueInfo->prDevHandler);
+	DBGLOG(INIT, INFO, "net_device prDev(0x%p) allocated\n", prGlueInfo->prDevHandler);
 	if (!prGlueInfo->prDevHandler) {
 		DBGLOG(INIT, ERROR, "Allocating memory to net_device context failed\n");
 		goto netcreate_err;
@@ -2601,6 +2303,9 @@ static struct wireless_dev *wlanNetCreate(PVOID pvData)
 	prGlueInfo->fgEnSdioTestPattern = FALSE;
 	prGlueInfo->fgIsSdioTestInitialized = FALSE;
 #endif
+
+	/* initialize semaphore for halt control */
+	sema_init(&g_halt_sem, 1);
 
 	/* 4 <8> Init Queues */
 	init_waitqueue_head(&prGlueInfo->waitq);
@@ -2690,10 +2395,6 @@ static VOID wlanNetDestroy(struct wireless_dev *prWdev)
 VOID wlanSetSuspendMode(P_GLUE_INFO_T prGlueInfo, BOOLEAN fgEnable)
 {
 	struct net_device *prDev = NULL;
-#if CFG_SUPPORT_REPLAY_DETECTION
-	struct GL_DETECT_REPLAY_INFO *prDetRplyInfo = NULL;
-	int i = 0;
-#endif
 
 	if (!prGlueInfo)
 		return;
@@ -2702,21 +2403,6 @@ VOID wlanSetSuspendMode(P_GLUE_INFO_T prGlueInfo, BOOLEAN fgEnable)
 	if (!prDev)
 		return;
 
-#if CFG_SUPPORT_REPLAY_DETECTION
-	prDetRplyInfo = &prGlueInfo->prDetRplyInfo;
-
-	/* Reset while resume */
-	if (!fgEnable) {
-		for (i = 0; i < REPLY_NUM; i++) {
-			prDetRplyInfo->arReplayPNInfo[i].fgRekey = TRUE;
-			prDetRplyInfo->arReplayPNInfo[i].fgFirstPkt = TRUE;
-		}
-	}
-#endif
-
-#if CFG_SUPPORT_SUSPEND_GTK_OFFLOAD
-	wlanSuspendRekeyOffload(prGlueInfo, !fgEnable);
-#endif
 	kalSetNetAddressFromInterface(prGlueInfo, prDev, fgEnable);
 }
 
@@ -2834,241 +2520,6 @@ void set_dbg_level_handler(unsigned char dbg_lvl[DBG_MODULE_NUM])
 }
 #endif
 
-
-static void wlanGetDefaultWifiMfg(P_REG_INFO_T prRegInfo)
-{
-	static TX_PWR_PARAM_T rTxPwr_default = {
-		0x2C, 0x2C, { 0x00, 0x00 }, /*cTxPwr2G4Cck*/ /*cTxPwr2G4Dsss*/
-		0x28, 0x28, 0x28, 0x28, 0x28, 0x28, /*cTxPwr2G4OFDM*/
-		0x28, 0x28, 0x28, 0x28, 0x28, 0x26, /*cTxPwr2G4HT20*/
-		0x26, 0x26, 0x26, 0x26, 0x26, 0x24, /*cTxPwr2G4HT40*/
-		0x25, 0x25, 0x25, 0x25, 0x25, 0x25, /*cTxPwr5GOFDM*/
-		0x25, 0x25, 0x25, 0x25, 0x25, 0x23, /*cTxPwr5GHT20*/
-		0x23, 0x23, 0x23, 0x23, 0x23, 0x23 }; /*cTxPwr5GHT40*/ /* TX_PWR_PARAM_T */
-
-	static UINT_8 aucEFUSE_default[144] = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x01, 0x20, 0x22, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x60, 0x60, 0x60, 0x01,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x10, 0x01, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x25, 0x25, 0x25, 0x25,
-		0x25, 0x21, 0x21, 0x00, 0xFE, 0xFE, 0xFE, 0x01,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }; /* aucEFUSE */
-
-	/* MAC Address */
-#if !defined(CONFIG_MTK_TC1_FEATURE)
-	memset(&prRegInfo->aucMacAddr, 0, PARAM_MAC_ADDR_LEN);
-#else
-	TC1_FAC_NAME(FacReadWifiMacAddr) ((unsigned char *)prRegInfo->aucMacAddr);
-#endif
-
-	/* country code */
-	prRegInfo->au2CountryCode[0] = (UINT_16)0;
-	prRegInfo->au2CountryCode[1] = (UINT_16)0;
-
-	/* default normal TX power */
-	prRegInfo->rTxPwr = rTxPwr_default;
-
-	/* feature flags */
-	prRegInfo->ucTxPwrValid = 1;
-	prRegInfo->ucSupport5GBand = 1;
-
-	prRegInfo->uc2G4BwFixed20M = 0;
-	prRegInfo->uc5GBwFixed20M = 0;
-
-	prRegInfo->ucEnable5GBand = 1;
-
-	/* EFUSE overriding part */
-	memcpy(prRegInfo->aucEFUSE, aucEFUSE_default, 144);
-
-	/* band edge tx power control */
-	prRegInfo->fg2G4BandEdgePwrUsed = 1;
-	prRegInfo->cBandEdgeMaxPwrCCK = 0x26;
-	prRegInfo->cBandEdgeMaxPwrOFDM20 = 0x1E;
-	prRegInfo->cBandEdgeMaxPwrOFDM40 = 0x1A;
-
-	/* regulation subbands */
-	prRegInfo->eRegChannelListMap = (ENUM_REG_CH_MAP_T)0;
-	prRegInfo->ucRegChannelListIndex = 0;
-	prRegInfo->ucRxDiversity = 0;
-	prRegInfo->rRssiPathCompasation.c2GRssiCompensation = 0;
-	prRegInfo->rRssiPathCompasation.c5GRssiCompensation = 0;
-	prRegInfo->ucRssiPathCompasationUsed = 0;
-	prRegInfo->ucGpsDesense = 0;
-}
-
-#ifdef CONFIG_IDME
-
-static WIFI_CFG_PARAM_STRUCT idme_wifi_mfg;
-
-static void wlanCopyIdmeWifiMfg(P_REG_INFO_T prRegInfo)
-{
-	int i, j;
-	PUINT_8 pucDest;
-
-	/* MAC Address */
-#if !defined(CONFIG_MTK_TC1_FEATURE)
-	memcpy(prRegInfo->aucMacAddr, idme_wifi_mfg.aucMacAddress,
-		PARAM_MAC_ADDR_LEN);
-#else
-	TC1_FAC_NAME(FacReadWifiMacAddr) ((unsigned char *)prRegInfo->aucMacAddr);
-#endif
-
-	/* country code */
-
-	/* cast to wide characters */
-	if (('X' == idme_wifi_mfg.aucCountryCode[0] &&
-		'X' == idme_wifi_mfg.aucCountryCode[1]) ||
-		(0 == idme_wifi_mfg.aucCountryCode[0] &&
-		0 == idme_wifi_mfg.aucCountryCode[1]))
-		idme_wifi_mfg.aucCountryCode[0] = idme_wifi_mfg.aucCountryCode[1] = 'W';
-
-	prRegInfo->au2CountryCode[0] = (UINT_16)idme_wifi_mfg.aucCountryCode[0];
-	prRegInfo->au2CountryCode[1] = (UINT_16)idme_wifi_mfg.aucCountryCode[1];
-
-	/* default normal TX power */
-	prRegInfo->rTxPwr = idme_wifi_mfg.rTxPwr;
-
-	/* feature flags */
-	prRegInfo->ucTxPwrValid = idme_wifi_mfg.ucTxPwrValid;
-	prRegInfo->ucSupport5GBand = idme_wifi_mfg.ucSupport5GBand;
-
-	prRegInfo->uc2G4BwFixed20M = idme_wifi_mfg.uc2G4BwFixed20M;
-	prRegInfo->uc5GBwFixed20M = idme_wifi_mfg.uc5GBwFixed20M;
-
-	prRegInfo->ucEnable5GBand = idme_wifi_mfg.ucEnable5GBand;
-
-#if CFG_SUPPORT_NVRAM_5G
-	/* EFUSE overriding part */
-	memcpy(prRegInfo->aucEFUSE, (UINT_8 *) &idme_wifi_mfg.EfuseMapping, 144);
-
-	prRegInfo->prOldEfuseMapping = (P_NEW_EFUSE_MAPPING2NVRAM_T)&prRegInfo->aucEFUSE;
-#else
-	/* EFUSE overriding part */
-	memcpy(prRegInfo->aucEFUSE, (UNIT_8 *) &idme_wifi_mfg.aucEFUSE, 144);
-#endif
-
-	/* band edge tx power control */
-	prRegInfo->fg2G4BandEdgePwrUsed = idme_wifi_mfg.fg2G4BandEdgePwrUsed;
-	if (prRegInfo->fg2G4BandEdgePwrUsed) {
-		prRegInfo->cBandEdgeMaxPwrCCK = idme_wifi_mfg.cBandEdgeMaxPwrCCK;
-		prRegInfo->cBandEdgeMaxPwrOFDM20 = idme_wifi_mfg.cBandEdgeMaxPwrOFDM20;
-		prRegInfo->cBandEdgeMaxPwrOFDM40 = idme_wifi_mfg.cBandEdgeMaxPwrOFDM40;
-	}
-
-	/* regulation subbands */
-	prRegInfo->eRegChannelListMap =
-		(ENUM_REG_CH_MAP_T)idme_wifi_mfg.ucRegChannelListMap;
-	prRegInfo->ucRegChannelListIndex = idme_wifi_mfg.ucRegChannelListIndex;
-
-	if (prRegInfo->eRegChannelListMap == REG_CH_MAP_CUSTOMIZED) {
-		for (i = 0; i < MAX_SUBBAND_NUM; i++) {
-			pucDest = (PUINT_8)&prRegInfo->rDomainInfo.rSubBand[i];
-
-			for (j = 0; j < 6; j++)
-				*pucDest++ = idme_wifi_mfg.aucRegSubbandInfo[i * 6 + j];
-		}
-	}
-
-	prRegInfo->ucRxDiversity = idme_wifi_mfg.ucRxDiversity;
-	prRegInfo->rRssiPathCompasation = idme_wifi_mfg.rRssiPathCompensation;
-	prRegInfo->ucRssiPathCompasationUsed = idme_wifi_mfg.fgRssiCompensationVaildbit;
-	prRegInfo->ucGpsDesense = idme_wifi_mfg.ucGpsDesense;
-
-	/* load full NVRAM */
-	memcpy((PUINT_8)&prRegInfo->aucNvram, (PUINT_8)&idme_wifi_mfg.u2Part1OwnVersion, sizeof(WIFI_CFG_PARAM_STRUCT));
-	prRegInfo->prNvramSettings = (P_WIFI_CFG_PARAM_STRUCT)&prRegInfo->aucNvram;
-}
-
-static void idme_get_mac_addr(P_REG_INFO_T prRegInfo)
-{
-	struct device_node *ap;
-	int len, i, ret;
-	char buf[3] = {0};
-
-	ap = of_find_node_by_path(IDME_OF_MAC_ADDR);
-	if (likely(ap)) {
-		const char *mac_addr = of_get_property(ap, "value", &len);
-		if (likely(len >= 12)) {
-			for (i = 0; i < 12; i += 2) {
-				buf[0] = mac_addr[i];
-				buf[1] = mac_addr[i + 1];
-				ret = kstrtou8(buf, 16, &prRegInfo->aucMacAddr[i >> 1]);
-				if (ret)
-					pr_err("idme_get_mac_addr kstrtou8 failed\n");
-			}
-		}
-	}
-}
-
-static int idme_get_wifi_mfg(P_REG_INFO_T prRegInfo)
-{
-	struct device_node *ap;
-	int i, len;
-	int ret = 0;
-	char buf[3] = {0};
-	PUINT_8 p;
-
-	ap = of_find_node_by_path(IDME_OF_WIFI_MFG);
-	if (likely(ap)) {
-		const char *wifi_mfg = of_get_property(ap, "value", &len);
-
-		if (likely(len >= 1024)) {
-			p = (PUINT_8) &idme_wifi_mfg;
-			for (i = 0; i < 1024; i += 2) {
-				buf[0] = wifi_mfg[i];
-				buf[1] = wifi_mfg[i + 1];
-				ret = kstrtou8(buf, 16, &p[i/2]);
-				if (ret)
-					DBGLOG(INIT, WARN, "kstrtou8 failed, i=%d\n", i);
-			}
-		} else {
-			DBGLOG(INIT, WARN, "idme wifi_mfg len err=%d\n", len);
-			ret = -1;
-		}
-	} else {
-		DBGLOG(INIT, WARN, "no idme wifi_mfg\n");
-		ret = -1;
-	}
-
-	return ret;
-}
-
-static void idme_get_board_id(P_REG_INFO_T prRegInfo)
-{
-	struct device_node *ap;
-	int len;
-
-	ap = of_find_node_by_path(IDME_OF_BOARD_ID);
-	if (likely(ap)) {
-		const char *board_id = of_get_property(ap, "value", &len);
-
-		if (likely(len >= 16))
-			memcpy(idme_board_id, board_id, sizeof(idme_board_id));
-	}
-}
-#endif
-
-INT_32 wlanRegulatoryHint(PUINT_8 pauCountryCode)
-{
-	if (NULL == gprWdev || NULL == pauCountryCode) {
-		DBGLOG(INIT, WARN, "gprWdev:0x%p, pauCountryCode:0x%p\n", gprWdev, pauCountryCode);
-		return -1;
-	}
-	return regulatory_hint(gprWdev->wiphy, pauCountryCode);
-}
-
 /*----------------------------------------------------------------------------*/
 /*!
 * \brief Wlan probe function. This function probes and initializes the device.
@@ -3150,16 +2601,7 @@ static INT_32 wlanProbe(PVOID pvData)
 			u4ConfigReadLen = 0;
 			kalMemZero(pucConfigBuf, WLAN_CFG_FILE_BUF_SIZE);
 			if (pucConfigBuf) {
-				if (kalReadToFile("/storage/sdcard0/wifi.cfg", pucConfigBuf,
-						  WLAN_CFG_FILE_BUF_SIZE, &u4ConfigReadLen) == 0) {
-					/* ToDo:: Nothing */
-				} else if (kalReadToFile("/data/misc/wifi.cfg", pucConfigBuf,
-							 WLAN_CFG_FILE_BUF_SIZE, &u4ConfigReadLen) == 0) {
-					/* ToDo:: Nothing */
-				} else if (kalReadToFile("/data/misc/wifi/wifi.cfg", pucConfigBuf,
-							 WLAN_CFG_FILE_BUF_SIZE, &u4ConfigReadLen) == 0) {
-					/* ToDo:: Nothing */
-				} else if (kalReadToFile("/etc/firmware/wifi.cfg", pucConfigBuf,
+				if (kalReadToFile("wifi.cfg", pucConfigBuf,
 							 WLAN_CFG_FILE_BUF_SIZE, &u4ConfigReadLen) == 0) {
 					/* ToDo:: Nothing */
 				}
@@ -3189,27 +2631,8 @@ static INT_32 wlanProbe(PVOID pvData)
 			prAdapter->fgIsFwOwn = TRUE;
 			nicPmTriggerDriverOwn(prAdapter);
 
-#ifdef CONFIG_IDME
-			if (idme_get_wifi_mfg(prRegInfo) == 0) { /* read idme OK */
-				/* copy idme Wifi data to prRegInfo */
-				wlanCopyIdmeWifiMfg(prRegInfo);
-				prGlueInfo->fgNvramAvailable = TRUE;
-			} else
-#endif
-			{
-				/* Load NVRAM content to REG_INFO_T */
-				glLoadNvram(prGlueInfo, prRegInfo);
-				if (prGlueInfo->fgNvramAvailable == FALSE)
-				{
-					wlanGetDefaultWifiMfg(prRegInfo);
-					prGlueInfo->fgNvramAvailable = TRUE;
-				}
-			}
-
-#ifdef CONFIG_IDME
-			idme_get_mac_addr(prRegInfo);
-			idme_get_board_id(prRegInfo);
-#endif
+			/* Load NVRAM content to REG_INFO_T */
+			glLoadNvram(prGlueInfo, prRegInfo);
 
 			/* kalMemCopy(&prGlueInfo->rRegInfo, prRegInfo, sizeof(REG_INFO_T)); */
 
@@ -3247,7 +2670,7 @@ bailout:
 			break;
 		}
 #endif
-		kalTrafficStatInit(prGlueInfo);
+
 		prGlueInfo->main_thread = kthread_run(tx_thread, prGlueInfo->prDevHandler, "tx_thread");
 #if CFG_SUPPORT_MULTITHREAD
 		prGlueInfo->hif_thread = kthread_run(hif_thread, prGlueInfo->prDevHandler, "hif_thread");
@@ -3469,7 +2892,6 @@ static VOID wlanRemove(VOID)
 	prGlueInfo->u4TxThreadPid = 0xffffffff;
 	prGlueInfo->u4HifThreadPid = 0xffffffff;
 #endif
-	kalTrafficStatUnInit(prGlueInfo);
 
 	/* Destroy wakelock */
 	wlanWakeLockUninit(prGlueInfo);
@@ -3516,7 +2938,6 @@ static VOID wlanRemove(VOID)
 
 	up(&g_halt_sem);
 
-	flush_work(&prGlueInfo->rDrvWork.rWork);
 	/* 4 <6> Unregister the card */
 	wlanNetUnregister(prDev->ieee80211_ptr);
 
@@ -3534,56 +2955,6 @@ static VOID wlanRemove(VOID)
 	wlanUnregisterNotifier();
 
 }				/* end of wlanRemove() */
-
-static VOID wlanPsyWorkFunc(PUINT_8 pucParams)
-{
-	UINT_32 u4InfoBufLen;
-	P_GLUE_INFO_T prGlueInfo = *(P_GLUE_INFO_T *)pucParams;
-	PUINT_8 pucCharingStatus = &pucParams[sizeof(prGlueInfo)];
-
-	kalIoctl(prGlueInfo, wlanoidNotifyChargeStatus, pucCharingStatus, kalStrLen(pucCharingStatus),
-		 FALSE, FALSE, FALSE, &u4InfoBufLen);
-}
-
-static int wlan_psy_notification(struct notifier_block *nb, unsigned long event, void *data)
-{
-	struct power_supply *psy = (struct power_supply*)data;
-	union power_supply_propval status;
-	static int last_status = POWER_SUPPLY_STATUS_UNKNOWN;
-	static struct power_supply *batt_psy;
-
-	if (!batt_psy)
-		batt_psy = power_supply_get_by_name("battery");
-
-	if (event != PSY_EVENT_PROP_CHANGED || !psy || psy != batt_psy)
-		return NOTIFY_OK;
-
-	if (!psy->get_property(psy, POWER_SUPPLY_PROP_STATUS, &status) &&
-		status.intval != last_status) {
-		P_GLUE_INFO_T prGlueInfo = NULL;
-
-		if ((prGlueInfo = wlanGetGlueInfo()) && (last_status == POWER_SUPPLY_STATUS_CHARGING ||
-		    status.intval == POWER_SUPPLY_STATUS_CHARGING)) {
-			static UINT_8 aucPsyWorkBuf[sizeof(struct DRV_COMMON_WORK_FUNC_T) + sizeof(prGlueInfo) + 18];
-			struct DRV_COMMON_WORK_FUNC_T *prPsyWork = (struct DRV_COMMON_WORK_FUNC_T *)&aucPsyWorkBuf[0];
-			P_GLUE_INFO_T *pprGlueInfo = (P_GLUE_INFO_T *)prPsyWork->params;
-
-			*pprGlueInfo = prGlueInfo;
-			if (last_status == POWER_SUPPLY_STATUS_CHARGING)
-				kalStrCpy(&prPsyWork->params[sizeof(prGlueInfo)], "Charging finished");
-			else
-				kalStrCpy(&prPsyWork->params[sizeof(prGlueInfo)], "Charging started");
-			prPsyWork->work_func = wlanPsyWorkFunc;
-			kalScheduleCommonWork(&prGlueInfo->rDrvWork, prPsyWork);
-		}
-	}
-	DBGLOG(INIT, TEMP, "charge status, current %d, last %d\n", status.intval, last_status);
-	last_status = status.intval;
-	return NOTIFY_OK;
-}
-static struct notifier_block wlan_psy_nb = {
-	.notifier_call = wlan_psy_notification,
-};
 
 /*----------------------------------------------------------------------------*/
 /*!
@@ -3622,8 +2993,6 @@ static int initWlan(void)
 #if (CFG_CHIP_RESET_SUPPORT)
 	glResetInit();
 #endif
-	glRegisterPlatformDev();
-	power_supply_reg_notifier(&wlan_psy_nb);
 	return ret;
 }				/* end of initWlan() */
 
@@ -3639,7 +3008,6 @@ static int initWlan(void)
 /* 1 Module Leave Point */
 static VOID exitWlan(void)
 {
-	glUnregisterPlatformDev();
 #if CFG_CHIP_RESET_SUPPORT
 	glResetUninit();
 #endif
@@ -3651,7 +3019,6 @@ static VOID exitWlan(void)
 	destroyWirelessDevice();
 	glP2pDestroyWirelessDevice();
 	procUninitProcFs();
-	power_supply_unreg_notifier(&wlan_psy_nb);
 
 	DBGLOG(INIT, INFO, "exitWlan\n");
 

@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/mgmt/privacy.c#1
 */
 
@@ -339,7 +327,7 @@ BOOL secCheckClassError(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prSwRfb, IN P_ST
 	if (!prStaRec || (prRxStatus->u2StatusFlag & RXS_DW2_RX_CLASSERR_BITMAP) == RXS_DW2_RX_CLASSERR_VALUE) {
 
 		DBGLOG(RSN, TRACE,
-		       "prStaRec=%p RX Status = %hx RX_CLASSERR check!\n", prStaRec, prRxStatus->u2StatusFlag);
+		       "prStaRec=%x RX Status = %x RX_CLASSERR check!\n", prStaRec, prRxStatus->u2StatusFlag);
 
 		/* if (IS_NET_ACTIVE(prAdapter, ucBssIndex)) { */
 		authSendDeauthFrame(prAdapter,
@@ -935,7 +923,7 @@ VOID secPrivacyFreeForEntry(IN P_ADAPTER_T prAdapter, IN UINT_8 ucEntry)
 
 	ASSERT(prAdapter);
 
-	if (ucEntry >= WTBL_SIZE)
+	if (ucEntry > WTBL_SIZE)
 		return;
 
 	DBGLOG(RSN, TRACE, "secPrivacyFreeForEntry %d", ucEntry);
@@ -995,7 +983,7 @@ VOID secPrivacyFreeSta(IN P_ADAPTER_T prAdapter, IN P_STA_RECORD_T prStaRec)
 			if (prWtbl[entry].ucUsed && EQUAL_MAC_ADDR(prStaRec->aucMacAddr, prWtbl[entry].aucMacAddr)) {
 				secPrivacyFreeForEntry(prAdapter, entry);
 #if 1				/* DBG */
-				DBGLOG(RSN, INFO, "Free the STA entry (%u)!\n", entry);
+				DBGLOG(RSN, INFO, "Free the STA entry (%lu)!\n", entry);
 #endif
 			}
 		}

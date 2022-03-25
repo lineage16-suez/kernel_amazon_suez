@@ -1,16 +1,4 @@
 /*
-* Copyright (C) 2016 MediaTek Inc.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 as
-* published by the Free Software Foundation.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-* See http://www.gnu.org/licenses/gpl-2.0.html for more details.
-*/
-/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/os/linux/gl_wext.c#5
 */
 
@@ -436,38 +424,12 @@ const long channel_freq[] = {
 #define NUM_CHANNELS (sizeof(channel_freq) / sizeof(channel_freq[0]))
 
 #define MAX_SSID_LEN    32
-#define COUNTRY_CODE_LEN	10	/*country code length */
 
 /*******************************************************************************
 *                             D A T A   T Y P E S
 ********************************************************************************
 */
-int
-priv_set_ints_get_str(IN struct net_device *prNetDev,
-		 IN struct iw_request_info *prIwReqInfo, IN union iwreq_data *prIwReqData, IN char *pcExtra)
-{
-	PUINT_32 pu4IntBuf = NULL;
-	UINT_8 acAppName[64] = {0};
-	UINT_32 au4Param[8] = {0};
-	UINT_8 aucIP[4] = {0};
 
-	if (copy_from_user(au4Param, prIwReqData->data.pointer, prIwReqData->data.length * 7))
-		return -EINTR;
-	//DBGLOG(REQ, ERROR, "xianpu: %s\n", prIwReqData->name);
-	pu4IntBuf = (PUINT_32)au4Param;
-	DBGLOG(REQ, ERROR, "xianpu: %d, %d, %d, %d, %d, %d\n", pu4IntBuf[1], pu4IntBuf[2], pu4IntBuf[3], pu4IntBuf[4], pu4IntBuf[5], pu4IntBuf[6]);
-	kalStrCpy(acAppName, "APP: ");
-	//kalForTest();
-	aucIP[0] = pu4IntBuf[1];
-	aucIP[1] = pu4IntBuf[2];
-	aucIP[2] = pu4IntBuf[3];
-	aucIP[3] = pu4IntBuf[4];
-	//kalGetAppName(pu4IntBuf[0], aucIP, pu4IntBuf[5], pu4IntBuf[6], &acAppName[5], sizeof(acAppName) - 5);
-	acAppName[63] = 0;
-	kalMemCopy(pcExtra, acAppName, 64);
-	DBGLOG(INIT, WARN, "xianpu: %s\n", pcExtra);
-	return 0;
-}
 /*******************************************************************************
 *                            P U B L I C   D A T A
 ********************************************************************************
@@ -546,16 +508,7 @@ static const struct iw_priv_args rIwPrivTable[] = {
 	{PRIV_CMD_P2P_MODE, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 2, 0, "set_p2p_mode"},
 #endif
 	{PRIV_CMD_MET_PROFILING, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 2, 0, "set_met_prof"},
-	{PRIV_CMD_INT_STAT, 0, 256, "get_int_stat" },
 
-	{PRIV_CMD_STAT, 0, 256, "stat"},
-	{PRIV_CMD_CONNSTATUS, 0, 256, "connStatus"},
-	{PRIV_CMD_SHOW_CHANNEL, 0, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "show_Channel"},
-	{PRIV_CMD_SET_RESETCOUNTER, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, 0, "set_ResetCounter"},
-	{PRIV_CMD_DTIM_SKIP_COUNT, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, 0,
-		"set_dtim_skip"},
-	{PRIV_CMD_DTIM_SKIP_COUNT, 0, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-		"get_dtim_skip"},
 };
 
 static const iw_handler rIwPrivHandler[] = {
@@ -1610,7 +1563,7 @@ wext_set_mlme(IN struct net_device *prNetDev,
 /*----------------------------------------------------------------------------*/
 static int
 wext_set_scan(IN struct net_device *prNetDev,
-	      IN struct iw_request_info *prIwrInfo, IN struct iw_scan_req *prIwScanReq, IN char *pcExtra)
+	      IN struct iw_request_info *prIwrInfo, IN union iwreq_data *prData, IN char *pcExtra)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
 	WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
@@ -1624,8 +1577,8 @@ wext_set_scan(IN struct net_device *prNetDev,
 
 #if WIRELESS_EXT > 17
 	/* retrieve SSID */
-	if (prIwScanReq)
-		essid_len = prIwScanReq->essid_len;
+	if (prData)
+		essid_len = ((struct iw_scan_req *)(((struct iw_point *)prData)->pointer))->essid_len;
 #endif
 
 	init_completion(&prGlueInfo->rScanComp);
@@ -2236,7 +2189,7 @@ wext_get_essid(IN struct net_device *prNetDev,
 
 	kalMemFree(prSsid, VIR_MEM_TYPE, sizeof(PARAM_SSID_T));
 
-	return rStatus;
+	return 0;
 }				/* wext_get_essid */
 
 #if 0
@@ -3288,40 +3241,22 @@ static int wext_set_country(IN struct net_device *prNetDev, IN struct iwreq *iwr
 	P_GLUE_INFO_T prGlueInfo;
 	WLAN_STATUS rStatus;
 	UINT_32 u4BufLen;
-	UINT_8 aucCountry[COUNTRY_CODE_LEN];
-	unsigned char *country = NULL;
+	UINT_8 aucCountry[2];
 
 	ASSERT(prNetDev);
 
 	/* iwr->u.data.pointer should be like "COUNTRY US", "COUNTRY EU"
 	 * and "COUNTRY JP"
 	 */
-	if (FALSE == GLUE_CHK_PR2(prNetDev, iwr) || !iwr->u.data.pointer || iwr->u.data.length < COUNTRY_CODE_LEN)
+	if (FALSE == GLUE_CHK_PR2(prNetDev, iwr) || !iwr->u.data.pointer || iwr->u.data.length < 10)
 		return -EINVAL;
 	prGlueInfo = *((P_GLUE_INFO_T *) netdev_priv(prNetDev));
 
-	if (copy_from_user(aucCountry, iwr->u.data.pointer, COUNTRY_CODE_LEN))
-		return -EFAULT;
+	aucCountry[0] = *((PUINT_8) iwr->u.data.pointer + 8);
+	aucCountry[1] = *((PUINT_8) iwr->u.data.pointer + 9);
 
-	country = aucCountry + 8;
-	if ('X' == country[0] && 'X' == country[1])
-			country[0] = country[1] = 'W';
-	rStatus = kalIoctl(prGlueInfo,
-			wlanoidSetCountryCode, country, 2, FALSE, FALSE, TRUE, &u4BufLen);
-	if (rStatus != WLAN_STATUS_SUCCESS)
-		return -1;
+	rStatus = kalIoctl(prGlueInfo, wlanoidSetCountryCode, &aucCountry[0], 2, FALSE, FALSE, TRUE, &u4BufLen);
 	wlanUpdateChannelTable(prGlueInfo);
-	p2pUpdateChannelTableByDomain(prGlueInfo);
-	rStatus = kalIoctl(prGlueInfo, wlanoidUpdatePowerTable, country, 2, FALSE, FALSE, TRUE, &u4BufLen);
-	if (rStatus != WLAN_STATUS_SUCCESS) {
-		DBGLOG(INIT, INFO, "failed update power table: %c%c\n",
-		       country[0], country[1]);
-		return -EINVAL;
-	}
-	/*Indicate channel change notificaiton to wpa_supplicant via cfg80211*/
-	if ('W' == country[0] && 'W' == country[1])
-		country[0] = country[1] = 'X';
-	wlanRegulatoryHint(country);
 
 	return 0;
 }
@@ -3350,7 +3285,6 @@ int wext_support_ioctl(IN struct net_device *prDev, IN struct ifreq *prIfReq, IN
 	int ret = 0;
 	char *prExtraBuf = NULL;
 	UINT_32 u4ExtraSize = 0;
-	struct iw_scan_req *prIwScanReq = NULL;
 
 	/* prDev is verified in the caller function wlanDoIOCTL() */
 
@@ -3487,21 +3421,21 @@ int wext_support_ioctl(IN struct net_device *prDev, IN struct ifreq *prIfReq, IN
 			ret = wext_set_scan(prDev, NULL, NULL, NULL);
 #if WIRELESS_EXT > 17
 		else if (iwr->u.data.length == sizeof(struct iw_scan_req)) {
-			prIwScanReq = kalMemAlloc(iwr->u.data.length, VIR_MEM_TYPE);
-			if (!prIwScanReq) {
+			prExtraBuf = kalMemAlloc(MAX_SSID_LEN, VIR_MEM_TYPE);
+			if (!prExtraBuf) {
 				ret = -ENOMEM;
 				break;
 			}
-			if (copy_from_user(prIwScanReq, iwr->u.data.pointer, iwr->u.data.length))
+			if (copy_from_user
+			    (prExtraBuf, ((struct iw_scan_req *)(iwr->u.data.pointer))->essid,
+			     ((struct iw_scan_req *)(iwr->u.data.pointer))->essid_len)) {
 				ret = -EFAULT;
-			else {
-				if (prIwScanReq->essid_len > IW_ESSID_MAX_SIZE)
-					prIwScanReq->essid_len = IW_ESSID_MAX_SIZE;
-				ret = wext_set_scan(prDev, NULL, prIwScanReq, &(prIwScanReq->essid[0]));
+			} else {
+				ret = wext_set_scan(prDev, NULL, (union iwreq_data *)&(iwr->u.data), prExtraBuf);
 			}
 
-			kalMemFree(prIwScanReq, VIR_MEM_TYPE, iwr->u.data.length);
-			prIwScanReq = NULL;
+			kalMemFree(prExtraBuf, VIR_MEM_TYPE, MAX_SSID_LEN);
+			prExtraBuf = NULL;
 		}
 #endif
 		else
@@ -3577,21 +3511,18 @@ int wext_support_ioctl(IN struct net_device *prDev, IN struct ifreq *prIfReq, IN
 #endif
 
 	case SIOCGIWESSID:	/* 0x8B1B, get SSID */
-		u4ExtraSize = iwr->u.essid.length;
 		if (!iwr->u.essid.pointer) {
 			ret = -EINVAL;
 			break;
 		}
 
-		if (u4ExtraSize != IW_ESSID_MAX_SIZE &&
-				u4ExtraSize != IW_ESSID_MAX_SIZE + 1) {
-			DBGLOG(INIT, ERROR, "[wifi] iwr->u.essid.length:"
-					"%d error\n", u4ExtraSize);
+		if (iwr->u.essid.length < IW_ESSID_MAX_SIZE) {
+			DBGLOG(INIT, INFO, "[wifi] iwr->u.essid.length:%d too small\n", iwr->u.essid.length);
 			ret = -E2BIG;	/* let caller try larger buffer */
 			break;
 		}
 
-		prExtraBuf = kalMemAlloc(IW_ESSID_MAX_SIZE + 1, VIR_MEM_TYPE);
+		prExtraBuf = kalMemAlloc(IW_ESSID_MAX_SIZE, VIR_MEM_TYPE);
 		if (!prExtraBuf) {
 			ret = -ENOMEM;
 			break;
@@ -3601,12 +3532,11 @@ int wext_support_ioctl(IN struct net_device *prDev, IN struct ifreq *prIfReq, IN
 
 		ret = wext_get_essid(prDev, NULL, &iwr->u.essid, prExtraBuf);
 		if (ret == 0) {
-			if (copy_to_user(iwr->u.essid.pointer, prExtraBuf,
-					iwr->u.essid.length))
+			if (copy_to_user(iwr->u.essid.pointer, prExtraBuf, iwr->u.essid.length))
 				ret = -EFAULT;
 		}
 
-		kalMemFree(prExtraBuf, VIR_MEM_TYPE, IW_ESSID_MAX_SIZE + 1);
+		kalMemFree(prExtraBuf, VIR_MEM_TYPE, IW_ESSID_MAX_SIZE);
 		prExtraBuf = NULL;
 
 		break;

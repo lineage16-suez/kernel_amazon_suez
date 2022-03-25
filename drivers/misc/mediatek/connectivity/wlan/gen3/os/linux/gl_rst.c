@@ -1,16 +1,4 @@
 /*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-/*
 ** Id: @(#) gl_rst.c@@
 */
 
@@ -80,7 +68,6 @@
 ********************************************************************************
 */
 BOOLEAN fgIsResetting = FALSE;
-BOOLEAN fgResetTriggered = FALSE;
 
 /*******************************************************************************
 *                           P R I V A T E   D A T A
@@ -164,7 +151,6 @@ static void *glResetCallback(ENUM_WMTDRV_TYPE_T eSrcType,
 			case WMTRSTMSG_RESET_START:
 				DBGLOG(INIT, WARN, "Whole chip reset start!\n");
 				fgIsResetting = TRUE;
-				fgResetTriggered = FALSE;
 				wifi_reset_start();
 				break;
 
@@ -247,7 +233,7 @@ BOOLEAN glResetTrigger(P_ADAPTER_T prAdapter)
 	BOOLEAN fgResult = TRUE;
 
 #if CFG_WMT_RESET_API_SUPPORT
-	if (kalIsResetting() || fgResetTriggered) {
+	if (kalIsResetting()) {
 		DBGLOG(INIT, ERROR,
 			"Skip triggering whole-chip reset during resetting! Chip[%04X E%u]\n",
 			MTK_CHIP_REV,
@@ -274,7 +260,6 @@ BOOLEAN glResetTrigger(P_ADAPTER_T prAdapter)
 			     (prAdapter->rVerInfo.u2FwPeerVersion >> 8),
 			     (prAdapter->rVerInfo.u2FwPeerVersion & BITS(0, 7)));
 
-		fgResetTriggered = TRUE;
 		fgResult = mtk_wcn_wmt_do_reset(WMTDRV_TYPE_WIFI);
 	}
 #endif
