@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/os/linux/include/gl_cfg80211.h#1
 */
 
@@ -86,6 +98,13 @@ typedef struct _NL80211_DRIVER_GET_STA_STATISTICS_PARAMS {
 	UINT_8 aucMacAddr[MAC_ADDR_LEN];
 } NL80211_DRIVER_GET_STA_STATISTICS_PARAMS, *P_NL80211_DRIVER_GET_STA_STATISTICS_PARAMS;
 
+#if CFG_SUPPORT_WAKEUP_STATISTICS
+typedef struct _NL80211_QUERY_WAKEUP_STATISTICS {
+	NL80211_DRIVER_TEST_MODE_PARAMS hdr;
+	struct _WAKEUP_STATISTIC *prWakeupCount;
+} NL80211_QUERY_WAKEUP_STATISTICS, *P_NL80211_QUERY_WAKEUP_STATISTICS;
+#endif
+
 typedef enum _ENUM_TESTMODE_STA_STATISTICS_ATTR {
 	NL80211_TESTMODE_STA_STATISTICS_INVALID = 0,
 	NL80211_TESTMODE_STA_STATISTICS_VERSION,
@@ -101,6 +120,12 @@ typedef enum _ENUM_TESTMODE_STA_STATISTICS_ATTR {
 	NL80211_TESTMODE_STA_STATISTICS_TOTAL_CNT,
 	NL80211_TESTMODE_STA_STATISTICS_THRESHOLD_CNT,
 	NL80211_TESTMODE_STA_STATISTICS_AVG_PROCESS_TIME,
+	NL80211_TESTMODE_STA_STATISTICS_TRAMSMIT_CNT,
+	NL80211_TESTMODE_STA_STATISTICS_TRAMSMIT_NOACK_CNT,
+	NL80211_TESTMODE_STA_STATISTICS_TX_PKTS,
+	NL80211_TESTMODE_STA_STATISTICS_TX_BYTES,
+	NL80211_TESTMODE_STA_STATISTICS_RX_PKTS,
+	NL80211_TESTMODE_STA_STATISTICS_RX_BYTES,
 
 	NL80211_TESTMODE_STA_STATISTICS_FAIL_CNT,
 	NL80211_TESTMODE_STA_STATISTICS_TIMEOUT_CNT,
@@ -132,12 +157,35 @@ typedef enum _ENUM_TESTMODE_AVAILABLE_CHAN_ATTR {
 	NL80211_TESTMODE_AVAILABLE_CHAN_NUM,
 } ENUM_TESTMODE_AVAILABLE_CHAN_ATTR;
 
+/*RX FILTER */
+struct NL80211_DRIVER_RX_FILTER_PARAMS {
+	NL80211_DRIVER_TEST_MODE_PARAMS hdr;
+	enum PARAM_RX_FILTER_OPCODE_T eOpcode;
+	UINT_8 ucPatternIndex;
+	UINT_8 aucPattern[64];
+	UINT_8 aucPatternBitMask[64];
+	UINT_32 u4Offset;
+	UINT_32 u4Length;
+	BOOLEAN fsIsWhiteList;
+	BOOLEAN fgIsEqual;
+};
+
+enum ENUM_TESTMODE_RX_FILTER_ATTR {
+	NL80211_TESTMODE_RX_FILTER_INVALID = 0,
+	NL80211_TESTMODE_RX_FILTER_RETURN,
+	NL80211_TESTMODE_RX_FILTER_NUM
+};
+
 #endif
 #endif
 /*******************************************************************************
 *                            P U B L I C   D A T A
 ********************************************************************************
 */
+#if CFG_SUPPORT_WAKEUP_REASON_DEBUG
+extern struct semaphore g_halt_sem;
+extern int g_u4HaltFlag;
+#endif
 
 /*******************************************************************************
 *                           P R I V A T E   D A T A
@@ -263,6 +311,9 @@ mtk_cfg80211_sched_scan_start(IN struct wiphy *wiphy,
 int mtk_cfg80211_sched_scan_stop(IN struct wiphy *wiphy, IN struct net_device *ndev);
 
 int mtk_cfg80211_assoc(struct wiphy *wiphy, struct net_device *ndev, struct cfg80211_assoc_request *req);
+
+int mtk_cfg80211_resume(struct wiphy *wiphy);
+int mtk_cfg80211_suspend(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
 
 int
 mtk_cfg80211_change_station(struct wiphy *wiphy, struct net_device *ndev, const u8 *mac,

@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/include/mgmt/cnm_mem.h#1
 */
 
@@ -919,6 +931,9 @@ struct _STA_RECORD_T {
 	UINT_32 u4TotalRxPktsNumber;
 	UINT_32 u4MaxTxPktsTime;
 	UINT_32 u4ThresholdCounter;
+	UINT_32 u4MacTxCnt;
+	UINT_32 u4MacTxNoAckCnt;
+	UINT_8 noise_avg;
 #endif
 
 #if 1
@@ -962,7 +977,7 @@ struct _STA_RECORD_T {
 	PARAM_KEY_T rTdlsKeyTemp;	/* temp to queue the key information */
 	UINT_8 ucTdlsIndex;
 #endif				/* CFG_SUPPORT_TDLS */
-
+	UINT_16 u2LastPhyRate;
 };
 
 #if 0

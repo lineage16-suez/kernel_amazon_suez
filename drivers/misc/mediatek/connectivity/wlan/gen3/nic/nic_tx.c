@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/nic/nic_tx.c#2
 */
 
@@ -1189,7 +1201,7 @@ BOOLEAN nicTxReleaseResource(IN P_ADAPTER_T prAdapter, IN UINT_16 *au2TxRlsCnt)
 
 			if (au2FreeTcResource[i]) {
 				DBGLOG(TX, TRACE,
-				       "Release: TC%lu ReturnPageCnt[%u] FreePageCnt[%u] FreeBufferCnt[%u]\n",
+				       "Release: TC%u ReturnPageCnt[%hu] FreePageCnt[%hu] FreeBufferCnt[%hu]\n",
 					i, au2FreeTcResource[i], prTcqStatus->au2FreePageCount[i],
 					prTcqStatus->au2FreeBufferCount[i]);
 			}
@@ -1588,7 +1600,7 @@ UINT_32 nicTxMsduQueueMthread(IN P_ADAPTER_T prAdapter)
 			QUEUE_MOVE_ALL((prDataPort1), (&(prAdapter->rTxP1Queue)));
 			KAL_RELEASE_SPIN_LOCK(prAdapter, SPIN_LOCK_TX_PORT_QUE);
 
-			nicTxMsduQueue(prAdapter, 1, prDataPort0);
+			nicTxMsduQueue(prAdapter, 1, prDataPort1);
 		}
 	}
 
@@ -2049,7 +2061,7 @@ WLAN_STATUS nicTxGenerateDescTemplate(IN P_ADAPTER_T prAdapter, IN P_STA_RECORD_
 
 			for (ucTid = 0; ucTid < TX_DESC_TID_NUM; ucTid++) {
 				prStaRec->aprTxDescTemplate[ucTid] = prTxDesc;
-				DBGLOG(TX, TRACE, "TXD template: TID[%u] Ptr[0x%x]\n", ucTid, (ULONG) prTxDesc);
+				DBGLOG(TX, TRACE, "TXD template: TID[%hhu] Ptr[%p]\n", ucTid, prTxDesc);
 			}
 		} while (FALSE);
 	}
@@ -2163,6 +2175,8 @@ WLAN_STATUS nicTxMsduQueue(IN P_ADAPTER_T prAdapter, UINT_8 ucPortIdx, P_QUE_T p
 
 			ASSERT(prNativePacket);
 
+			if (glIsDataStatEnabled() && !kalTRxStatsPaused())
+				kalStatTRxPkts(prAdapter->prGlueInfo, prNativePacket, TRUE);
 #if CFG_SUPPORT_MULTITHREAD
 			nicTxCopyDesc(prAdapter, (pucOutputBuf + u4TotalLength),
 				      prMsduInfo->aucTxDescBuffer, &ucTxDescSize);
@@ -2314,6 +2328,9 @@ WLAN_STATUS nicTxCmd(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmdInfo, IN UIN
 	if (prCmdInfo->eCmdType == COMMAND_TYPE_SECURITY_FRAME) {
 		prMsduInfo = prCmdInfo->prMsduInfo;
 
+		if (glIsDataStatEnabled() && !kalTRxStatsPaused())
+			kalStatOtherPkts(prAdapter->prGlueInfo, TRUE, ETH_P_1X, 0);
+
 #if CFG_SUPPORT_MULTITHREAD
 		nicTxCopyDesc(prAdapter, &pucOutputBuf[0], prMsduInfo->aucTxDescBuffer, &ucTxDescLength);
 #else
@@ -2373,6 +2390,12 @@ WLAN_STATUS nicTxCmd(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmdInfo, IN UIN
 			prCmdInfo->ucBssIndex, prMsduInfo->ucWlanIndex, prMsduInfo->ucPID,
 			prMsduInfo->ucTxSeqNum, prMsduInfo->ucStaRecIndex, u2OverallBufferLength,
 			prMsduInfo->pfTxDoneHandler ? TRUE : FALSE);
+		if (glIsDataStatEnabled() && !kalTRxStatsPaused()) {
+				P_WLAN_MAC_HEADER_T prMgmtHeader = (P_WLAN_MAC_HEADER_T) ((ULONG) (prMsduInfo->prPacket) + MAC_TX_RESERVED_FIELD);
+
+				kalStatDrvPkts(prAdapter->prGlueInfo, TRUE, DRV_PKT_MGMT,
+						(prMgmtHeader->u2FrameCtrl & MASK_FC_SUBTYPE) >> OFFSET_OF_FC_SUBTYPE);
+		}
 
 		if (prMsduInfo->pfTxDoneHandler) {
 			/* DBGLOG(INIT, TRACE,("Wait Cmd TxSeqNum:%d\n", prMsduInfo->ucTxSeqNum)); */
@@ -2402,6 +2425,8 @@ WLAN_STATUS nicTxCmd(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmdInfo, IN UIN
 		DBGLOG(TX, TRACE, "TX CMD: ID[0x%02X] SEQ[%u] SET[%u] LEN[%u]\n",
 				    prWifiCmd->ucCID, prWifiCmd->ucSeqNum, prWifiCmd->ucSetQuery,
 				    u2OverallBufferLength);
+		if (glIsDataStatEnabled() && !kalTRxStatsPaused())
+			kalStatDrvPkts(prAdapter->prGlueInfo, TRUE, DRV_PKT_CMD, prWifiCmd->ucCID);
 	}
 
 	/* <4> Write frame to data port */
@@ -2526,6 +2551,9 @@ VOID nicProcessTxInterrupt(IN P_ADAPTER_T prAdapter)
 #endif /* CFG_SDIO_INTR_ENHANCE */
 
 	nicTxAdjustTcq(prAdapter);
+#if CFG_SUPPORT_WAKEUP_STATISTICS
+	nicUpdateWakeupStatistics(prAdapter, TX_INT);
+#endif
 
 	/* Indicate Service Thread */
 	if (kalGetTxPendingCmdCount(prAdapter->prGlueInfo) > 0 || wlanGetTxPendingFrameCount(prAdapter) > 0)
@@ -2561,7 +2589,8 @@ VOID nicTxFreeMsduInfoPacket(IN P_ADAPTER_T prAdapter, IN P_MSDU_INFO_T prMsduIn
 			if (prNativePacket)
 				kalSendComplete(prAdapter->prGlueInfo, prNativePacket, WLAN_STATUS_FAILURE);
 			/*get per-AC Tx drop packets */
-			wlanUpdateTxStatistics(prAdapter, prMsduInfo, TRUE);
+			if (prAdapter->prAisBssInfo)
+				wlanUpdateTxStatistics(prAdapter, prMsduInfo, TRUE);
 		} else if (prMsduInfo->eSrc == TX_PACKET_MGMT) {
 			if (prMsduInfo->pfTxDoneHandler)
 				prMsduInfo->pfTxDoneHandler(prAdapter, prMsduInfo, TX_RESULT_DROPPED_IN_DRIVER);
@@ -2974,6 +3003,11 @@ VOID nicTxProcessTxDoneEvent(IN P_ADAPTER_T prAdapter, IN P_WIFI_EVENT_T prEvent
 #endif
 
 	if (prMsduInfo) {
+		if (prMsduInfo->eSrc == TX_PACKET_MGMT && prTxDone->ucStatus != 0) {
+			DBGLOG(TX, ERROR, "MGMT FRAME TX FAIL Status[%u] MAC Frame Type[0x%x]\n",
+					prTxDone->ucStatus,
+					((P_WLAN_AUTH_FRAME_T)(prMsduInfo->prPacket))->u2FrameCtrl);
+		}
 		prMsduInfo->pfTxDoneHandler(prAdapter, prMsduInfo, (ENUM_TX_RESULT_CODE_T) (prTxDone->ucStatus));
 
 		if (prMsduInfo->eSrc == TX_PACKET_MGMT)
@@ -3161,8 +3195,8 @@ UINT_8 nicTxGetWlanIdx(P_ADAPTER_T prAdapter, UINT_8 ucBssIdx, UINT_8 ucStaRecId
 		ucWlanIndex = prBssInfo->ucBMCWlanIndex;
 
 	if (ucWlanIndex >= WTBL_SIZE) {
-		DBGLOG(TX, WARN, "%s: Unexpected WIDX[%u] BSS[%u] STA[%u], set WIDX to default value[%u]\n",
-			ucWlanIndex, ucBssIdx, ucStaRecIdx, NIC_TX_DEFAULT_WLAN_INDEX);
+		DBGLOG(TX, WARN, "%s: Unexpected WIDX[%hhu] BSS[%hhu] STA[%hhu], set WIDX to default value[%u]\n",
+			__func__, ucWlanIndex, ucBssIdx, ucStaRecIdx, NIC_TX_DEFAULT_WLAN_INDEX);
 
 		ucWlanIndex = NIC_TX_DEFAULT_WLAN_INDEX;
 	}

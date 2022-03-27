@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/os/linux/include/gl_kal.h#2
 */
 
@@ -742,11 +754,16 @@ typedef enum _ENUM_SPIN_LOCK_CATEGORY_E {
 
 	SPIN_LOCK_EHPI_BUS,	/* only for EHPI */
 	SPIN_LOCK_NET_DEV,
+	SPIN_LOCK_SOCK_APP_MAP,
+	SPIN_LOCK_APP_TRX_STAT,
+	SPIN_LOCK_OTHER_DATA_STAT,
+	SPIN_LOCK_DRV_PKT_STAT,
 	SPIN_LOCK_NUM
 } ENUM_SPIN_LOCK_CATEGORY_E;
 
 typedef enum _ENUM_MUTEX_CATEGORY_E {
 	MUTEX_TX_CMD_CLEAR,
+	MUTEX_TRAFFIC_STAT,
 	MUTEX_NUM
 } ENUM_MUTEX_CATEGORY_E;
 
@@ -895,6 +912,85 @@ typedef struct _MONITOR_RADIOTAP_T {
 } __packed MONITOR_RADIOTAP_T, *P_MONITOR_RADIOTAP_T;
 #endif
 
+enum ENUM_WAKE_UP_T {
+	WAKE_TYPE_IP,
+	WAKE_TYPE_MGMT,
+	WAKE_TYPE_EVENT,
+	WAKE_TYPE_UNKNOWN,
+	WAKE_TYPE_ARP,
+	WAKE_TYPE_1X,
+	WAKE_TYPE_OTHER_DATA,
+	WAKE_TYPE_FINISH_STATUS,
+	WAKE_TYPE_BAR,
+	WAKE_TYPE_NO_PKT_DATA,
+	WAKE_TYPE_INVALID_SW_DEFINED,
+	WAKE_TYPE_NUM
+};
+
+enum ENUM_IP_TYPE {
+	IP_TCP4,
+	IP_TCP6,
+	IP_UDP4,
+	IP_UDP6,
+	IP_NUM
+};
+
+struct SOCK_APP_MAP_T {
+	LINK_ENTRY_T rLinkEntry;
+	UINT_32 au4RIPv6[4];
+	UINT_16 u2Rport;
+	UINT_16 u2Lport;
+	OS_SYSTIME rTimestamp;
+	struct task_struct *task;
+	struct APP_TX_RX_STAT_T *prAppStat;
+};
+
+struct APP_TX_RX_STAT_T {
+	LINK_ENTRY_T rLinkEntry;
+	CHAR acAppName[64];
+	UINT_32 u4TxStat;
+	UINT_32 u4RxStat;
+};
+
+enum ENUM_DRV_PKT_TYPE {
+	DRV_PKT_MGMT,
+	DRV_PKT_EVENT,
+	DRV_PKT_CMD,
+	DRV_PKT_NUM
+};	
+
+struct OTHER_DATA_STAT_T {
+	LINK_ENTRY_T rLinkEntry;
+	UINT_16 u2EthType;
+	UINT_8 ucIpProto;
+	UINT_32 u4TxStat;
+	UINT_32 u4RxStat;
+};
+
+struct DRV_PKT_STAT_T {
+	UINT_64 aulDrvPktMaps[4];
+	UINT_32 u4TxStat;
+	UINT_32 u4RxStat;
+};
+
+struct DRV_COMMON_WORK_FUNC_T {
+	QUE_ENTRY_T rQueEntry;
+	/* Halt semaphore should be held in work_func if it access core data of driver, ex: prAdapter.
+	** Memory of DRV_COMMON_WORK_FUNC_T is managed by work_func as well, if it is allocated dynamically,
+	** must be freed in work_func.
+	*/
+	VOID (*work_func)(PUINT_8 prParams);
+	/* Zero length array to adapt various variables */
+	UINT_8 params[0];
+};
+
+struct DRV_COMMON_WORK_T {
+	struct work_struct rWork;
+	QUE_T rWorkFuncQue;
+	spinlock_t rWorkFuncQueLock;
+	struct lock_class_key rLockKey;
+};
+
 /*******************************************************************************
 *                            P U B L I C   D A T A
 ********************************************************************************
@@ -909,6 +1005,8 @@ typedef struct _MONITOR_RADIOTAP_T {
 *                                 M A C R O S
 ********************************************************************************
 */
+#define KAL_MARK_WAKEUP_PKT(_pvPkt) (((struct sk_buff *)_pvPkt)->mark = 0x1234)
+#define KAL_IS_WAKEUP_PKT(_pvPkt) (((struct sk_buff *)_pvPkt)->mark == 0x1234)
 
 /*----------------------------------------------------------------------------*/
 /* Macros of getting current thread id                                        */
@@ -1172,7 +1270,7 @@ typedef struct _MONITOR_RADIOTAP_T {
 
 #define kalGetTimeTick()                            jiffies_to_msecs(jiffies)
 
-#define kalPrint                                    pr_debug
+#define kalPrint                                    printk
 #define WLAN_TAG                                    "[wlan]"
 
 #if 1
@@ -1373,6 +1471,7 @@ VOID kalOidCmdClearance(IN P_GLUE_INFO_T prGlueInfo);
 VOID kalOidClearance(IN P_GLUE_INFO_T prGlueInfo);
 
 VOID kalEnqueueCommand(IN P_GLUE_INFO_T prGlueInfo, IN P_QUE_ENTRY_T prQueueEntry);
+VOID kalDumpCommandQue(IN P_GLUE_INFO_T prGlueInfo);
 
 #if CFG_ENABLE_BT_OVER_WIFI
 /*----------------------------------------------------------------------------*/
@@ -1508,6 +1607,8 @@ UINT_32 kalGetMfpSetting(IN P_GLUE_INFO_T prGlueInfo);
 
 UINT_32 kalWriteToFile(const PUINT_8 pucPath, BOOLEAN fgDoAppend, PUINT_8 pucData, UINT_32 u4Size);
 
+UINT_32 kalCheckPath(const PUINT_8 pucPath);
+
 INT_32 kalReadToFile(const PUINT_8 pucPath, PUINT_8 pucData, UINT_32 u4Size, PUINT_32 pu4ReadSize);
 
 /*----------------------------------------------------------------------------*/
@@ -1599,7 +1700,37 @@ int hif_thread(void *data);
 int rx_thread(void *data);
 #endif
 UINT_64 kalGetBootTime(VOID);
-
+#if CFG_SUPPORT_WAKEUP_REASON_DEBUG
+BOOLEAN kalIsWakeupByWlan(P_ADAPTER_T  prAdapter);
+#endif
 int kalMetInitProcfs(IN P_GLUE_INFO_T prGlueInfo);
 int kalMetRemoveProcfs(void);
+
+#if CFG_SUPPORT_SCAN_CHANNEL_REQUEST
+UINT_32 kalGetScanRequestChannelNum(IN P_GLUE_INFO_T prGlueInfo);
+
+WLAN_STATUS kalGetScanRequestChannelList(IN P_GLUE_INFO_T prGlueInfo,
+					OUT RF_CHANNEL_INFO_T arChnlInfoList[],
+					IN UINT_32 u4EntryNum);
+#endif
+VOID kalScheduleCommonWork(struct DRV_COMMON_WORK_T *prDrvWork, struct DRV_COMMON_WORK_FUNC_T *prWork);
+VOID kalStatTRxPkts(P_GLUE_INFO_T prGlueInfo, struct sk_buff *prSkb, BOOLEAN fgTx);
+VOID glNotifyWakeups(PVOID pvWakeup, enum ENUM_WAKE_UP_T eType);
+VOID glNotifyAppTxRx(P_GLUE_INFO_T prGlueInfo, PCHAR pcReason);
+struct APP_TX_RX_STAT_T * kalAppRxStat(P_GLUE_INFO_T prGlueInfo, enum ENUM_IP_TYPE eIpType,
+		PUINT_8 pucRip, UINT_16 u2Rport, UINT_16 u2Lport);
+
+VOID kalTrafficStatInit(P_GLUE_INFO_T prGlueInfo);
+VOID kalTrafficStatUnInit(P_GLUE_INFO_T prGlueInfo);
+VOID kalResetTRxStats(P_GLUE_INFO_T prGlueInfo);
+VOID kalResetSockAppMapCache(P_GLUE_INFO_T prGlueInfo);
+BOOLEAN kalGetAppNameByEth(P_GLUE_INFO_T prGlueInfo, struct sk_buff *prSkb, PUINT_8 pcAppName, UINT_32 u4NameSize);
+BOOLEAN kalWakeupFromSleep(VOID);
+VOID glLogSuspendResumeTime(BOOLEAN fgSuspend);
+VOID kalStatDrvPkts(P_GLUE_INFO_T prGlueInfo, BOOLEAN fgTx, enum ENUM_DRV_PKT_TYPE eType, UINT_8 ucIDSubType);
+BOOLEAN glIsDataStatEnabled(VOID);
+VOID kalStatOtherPkts(P_GLUE_INFO_T prGlueInfo, BOOLEAN fgTx, UINT_16 u2EthType, UINT_8 ucIpProto);
+BOOLEAN kalTRxStatsPaused(VOID);
+BOOLEAN glIsWakeupLogEnabled(VOID);
+
 #endif /* _GL_KAL_H */

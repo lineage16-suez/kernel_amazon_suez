@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** gl_vendor.c
 **
 **
@@ -154,6 +166,7 @@ int mtk_cfg80211_vendor_set_config(struct wiphy *wiphy, struct wireless_dev *wde
 	WLAN_STATUS rStatus;
 	UINT_32 u4BufLen;
 	P_GLUE_INFO_T prGlueInfo = NULL;
+	UINT_32 u4ArySize;
 	/* CMD_GSCN_REQ_T rCmdGscnParam; */
 
 	/* INT_32 i4Status = -EINVAL; */
@@ -198,7 +211,10 @@ int mtk_cfg80211_vendor_set_config(struct wiphy *wiphy, struct wireless_dev *wde
 				len_basic += NLA_ALIGN(attr[k]->nla_len);
 				break;
 			case GSCAN_ATTRIBUTE_NUM_BUCKETS:
-				prWifiScanCmd->num_buckets = nla_get_u32(attr[k]);
+				u4ArySize = nla_get_u32(attr[k]);
+				prWifiScanCmd->num_buckets =
+					(u4ArySize <= GSCAN_MAX_BUCKETS)
+					? u4ArySize : GSCAN_MAX_BUCKETS;
 				len_basic += NLA_ALIGN(attr[k]->nla_len);
 				DBGLOG(REQ, TRACE, "attr=0x%x, num_buckets=%d nla_len=%d\r\n",
 				       *(UINT_32 *) attr[k], prWifiScanCmd->num_buckets, attr[k]->nla_len);

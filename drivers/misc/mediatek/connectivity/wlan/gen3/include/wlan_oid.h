@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/include/wlan_oid.h#4
 */
 
@@ -411,7 +423,9 @@ typedef struct _PARAM_CONNECT_T {
 	UINT_32 u4SsidLen;	/*!< SSID length in bytes. Zero length is broadcast(any) SSID */
 	UINT_8 *pucSsid;
 	UINT_8 *pucBssid;
-	UINT_32 u4CenterFreq;
+	UINT_8 ucSpecificChnl;
+	RF_CHANNEL_INFO_T rChannelInfo;
+	ENUM_CHNL_EXT_T eChnlSco;
 } PARAM_CONNECT_T, *P_PARAM_CONNECT_T;
 
 /* This is enum defined for user to select an AdHoc Mode */
@@ -697,6 +711,14 @@ typedef struct _PARAM_GTK_REKEY_DATA {
 	UINT_8 aucKek[NL80211_KEK_LEN];
 	UINT_8 aucKck[NL80211_KCK_LEN];
 	UINT_8 aucReplayCtr[NL80211_REPLAY_CTR_LEN];
+	UINT_8 ucBssIndex;
+	UINT_8 ucRekeyDisable; /* disable rekey offload. 0: enable */
+	UINT_8 ucRsv[2];
+	UINT_32 u4Proto;
+	UINT_32 u4PairwiseCipher;
+	UINT_32 u4GroupCipher;
+	UINT_32 u4KeyMgmt;
+	UINT_32 u4MgmtGroupCipher;
 } PARAM_GTK_REKEY_DATA, *P_PARAM_GTK_REKEY_DATA;
 
 typedef struct _PARAM_CUSTOM_MCR_RW_STRUCT_T {
@@ -715,6 +737,28 @@ typedef struct _PARAM_CUSTOM_SW_CTRL_STRUCT_T {
 	UINT_32 u4Id;
 	UINT_32 u4Data;
 } PARAM_CUSTOM_SW_CTRL_STRUCT_T, *P_PARAM_CUSTOM_SW_CTRL_STRUCT_T;
+
+/*RX FILTER */
+#define ETHER_MAX_PKT_SIZE 128
+
+enum PARAM_RX_FILTER_OPCODE_T {
+	RX_FILTER_OP_ADD = 0,
+	RX_FILTER_OP_DEL,
+	RX_FILTER_OP_ENABLE,
+	RX_FILTER_OP_DISABLE,
+	RX_FILTER_OP_NUM
+};
+
+struct PARAM_DRIVER_FW_RX_FILTER {
+	enum PARAM_RX_FILTER_OPCODE_T eOpcode;
+	UINT_8 ucPatternIndex;
+	UINT_8 aucPattern[64];
+	UINT_8 aucPatternBitMask[64];
+	UINT_32 u4Offset;
+	UINT_32 u4Length;
+	BOOLEAN fsIsWhiteList;
+	BOOLEAN fgIsEqual;
+};
 
 typedef struct _PARAM_CUSTOM_CHIP_CONFIG_STRUCT_T {
 	UINT_16 u2Id;
@@ -1360,6 +1404,11 @@ wlanoidSetSwCtrlWrite(IN P_ADAPTER_T prAdapter,
 		      IN PVOID pvSetBuffer, IN UINT_32 u4SetBufferLen, OUT PUINT_32 pu4SetInfoLen);
 
 WLAN_STATUS
+wlanoidSetRxFilter(IN P_ADAPTER_T prAdapter,
+		   IN PVOID pvQueryBuffer,
+		   IN UINT_32 u4QueryBufferLen, OUT PUINT_32 pu4QueryInfoLen);
+
+WLAN_STATUS
 wlanoidSetChipConfig(IN P_ADAPTER_T prAdapter,
 		     IN PVOID pvSetBuffer, IN UINT_32 u4SetBufferLen, OUT PUINT_32 pu4SetInfoLen);
 
@@ -1619,6 +1668,9 @@ WLAN_STATUS
 wlanoidSetCountryCode(IN P_ADAPTER_T prAdapter,
 		      IN PVOID pvSetBuffer, IN UINT_32 u4SetBufferLen, OUT PUINT_32 pu4SetInfoLen);
 
+WLAN_STATUS
+wlanoidUpdatePowerTable(IN P_ADAPTER_T prAdapter,
+		      IN PVOID pvSetBuffer, IN UINT_32 u4SetBufferLen, OUT PUINT_32 pu4SetInfoLen);
 WLAN_STATUS wlanSendMemDumpCmd(IN P_ADAPTER_T prAdapter, IN PVOID pvQueryBuffer, IN UINT_32 u4QueryBufferLen);
 
 #if CFG_SLT_SUPPORT
@@ -1752,6 +1804,24 @@ WLAN_STATUS wlanoidSetMonitor(IN P_ADAPTER_T prAdapter,
 			      IN PVOID pvSetBuffer, IN UINT_32 u4SetBufferLen, OUT PUINT_32 pu4SetInfoLen);
 #endif
 
+#if CFG_SUPPORT_DEBUG_FS
+WLAN_STATUS
+wlanoidGetRoamParams(IN P_ADAPTER_T prAdapter,
+	    OUT PVOID pvQueryBuffer, IN UINT_32 u4QueryBufferLen, OUT PUINT_32 pu4QueryInfoLen);
+
+WLAN_STATUS
+wlanoidGetCountryCode(IN P_ADAPTER_T prAdapter,
+	    OUT PVOID pvQueryBuffer, IN UINT_32 u4QueryBufferLen, OUT PUINT_32 pu4QueryInfoLen);
+
+WLAN_STATUS
+wlanoidSetRoamParams(IN P_ADAPTER_T prAdapter,
+			IN PVOID pvSetBuffer, IN UINT_32 u4SetBufferLen, OUT PUINT_32 pu4SetInfoLen);
+
+WLAN_STATUS
+wlanoidSetForceRoam(IN P_ADAPTER_T prAdapter,
+			IN PVOID pvSetBuffer, IN UINT_32 u4SetBufferLen, OUT PUINT_32 pu4SetInfoLen);
+#endif
+
 WLAN_STATUS
 wlanoidSetGSCNAction(IN P_ADAPTER_T prAdapter,
 		     IN PVOID pvSetBuffer, IN UINT_32 u4SetBufferLen, OUT PUINT_32 pu4SetInfoLen);
@@ -1775,5 +1845,19 @@ WLAN_STATUS wlanoidSetPacketFilter(P_ADAPTER_T prAdapter, UINT_32 u4PacketFilter
 *                              F U N C T I O N S
 ********************************************************************************
 */
+
+WLAN_STATUS
+wlanoidQueryDbgCntr(IN P_ADAPTER_T prAdapter,
+		OUT PVOID pvQueryBuffer, IN UINT_32 u4SetBufferLen, OUT PUINT_32 pu4SetInfoLen);
+
+WLAN_STATUS
+wlanoidSetResetCounter(IN P_ADAPTER_T prAdapter,
+		IN PVOID pvSetBuffer, IN UINT_32 u4QueryBufferLen, OUT PUINT_32 pu4QueryInfoLen);
+
+WLAN_STATUS wlanoidNotifyTRxStats(IN P_ADAPTER_T prAdapter,
+	IN PVOID pvQueryBuffer, IN UINT_32 u4QueryBufferLen, OUT PUINT_32 pu4QueryInfoLen);
+
+WLAN_STATUS wlanoidNotifyChargeStatus(IN P_ADAPTER_T prAdapter,
+	IN PVOID pvQueryBuffer, IN UINT_32 u4QueryBufferLen, OUT PUINT_32 pu4QueryInfoLen);
 
 #endif /* _WLAN_OID_H */

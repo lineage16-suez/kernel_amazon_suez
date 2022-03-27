@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** Id:
 */
 
@@ -74,6 +86,13 @@
 */
 /* Roaming Discovery interval, SCAN result need to be updated */
 #define ROAMING_DISCOVERY_TIMEOUT_SEC               5	/* Seconds. */
+#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
+#define ROAMING_ONE_AP_SKIP_TIMES_INITIAL		2
+#define ROAMING_ONE_AP_SKIP_TIMES_IN_POOR		2
+#define ROAMING_ONE_AP_SKIP_TIMES_IN_GOOD		3
+#define ROAMING_ONE_AP_GOOD_AREA_RCPI			90
+#define ROAMING_ONE_AP_POOR_AREA_RCPI			67
+#endif
 
 /* #define ROAMING_NO_SWING_RCPI_STEP                  5 //rcpi */
 /*******************************************************************************
@@ -107,7 +126,21 @@ typedef struct _CMD_ROAMING_CTRL_T {
 	UINT_16 u2RcpiLowThr;
 	UINT_8 ucRoamingRetryLimit;
 	UINT_8 ucRoamingStableTimeout;
+#if CFG_SUPPORT_DEBUG_FS
+	UINT_8 ucPerThreshold;
+	UINT_8 aucReserved[1];
+#else
+	UINT_8 aucReserved[2];
+#endif
 } CMD_ROAMING_CTRL_T, *P_CMD_ROAMING_CTRL_T;
+
+#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
+ typedef struct _CMD_ROAMING_SKIP_ONE_AP_T {
+	 UINT_8 fgIsRoamingSkipOneAP;
+	 UINT_8 aucReserved[3];
+	 UINT_8 aucReserved2[8];
+ } CMD_ROAMING_SKIP_ONE_AP_T, *P_CMD_ROAMING_SKIP_ONE_AP_T;
+#endif
 
  /**/ typedef enum _ENUM_ROAMING_STATE_T {
 	ROAMING_STATE_IDLE = 0,
@@ -123,6 +156,10 @@ typedef struct _ROAMING_INFO_T {
 	ENUM_ROAMING_STATE_T eCurrentState;
 
 	OS_SYSTIME rRoamingDiscoveryUpdateTime;
+
+#if CFG_SUPPORT_DEBUG_FS
+	CMD_ROAMING_CTRL_T rRoamCtrl;
+#endif
 } ROAMING_INFO_T, *P_ROAMING_INFO_T;
 
 /*******************************************************************************
