@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/mgmt/assoc.c#5
 */
 
@@ -468,6 +480,8 @@ Add per station flow control when STA is in PS
 *                            P U B L I C   D A T A
 ********************************************************************************
 */
+#define MAX_DTIM_SKIP_COUNT					6
+
 APPEND_VAR_IE_ENTRY_T txAssocReqIETable[] = {
 	{(ELEM_HDR_LEN + ELEM_MAX_LEN_HT_CAP), NULL, rlmReqGenerateHtCapIE}
 	,			/* 45 */
@@ -772,6 +786,7 @@ assocComposeReAssocReqFrameHeaderAndFF(IN P_ADAPTER_T prAdapter,
 	UINT_16 u2FrameCtrl;
 	UINT_16 u2CapInfo;
 	UINT_16 u2ListenInterval;
+	P_BSS_DESC_T prTargetBssDesc = NULL;
 
 	ASSERT(prStaRec);
 	ASSERT(pucBuffer);
@@ -808,14 +823,25 @@ assocComposeReAssocReqFrameHeaderAndFF(IN P_ADAPTER_T prAdapter,
 	/* Fill the Capability Information field. */
 	WLAN_SET_FIELD_16(&prAssocFrame->u2CapInfo, u2CapInfo);
 
-	/* Calculate the listen interval for the maximum power mode. Currently, we
-	   set it to the value 2 times DTIM period. */
-	if (prStaRec->ucDTIMPeriod) {
-		u2ListenInterval = prStaRec->ucDTIMPeriod * DEFAULT_LISTEN_INTERVAL_BY_DTIM_PERIOD;
-	} else {
-		DBGLOG(SAA, TRACE, "Use default listen interval\n");
-		u2ListenInterval = DEFAULT_LISTEN_INTERVAL;
+	/* Dynamic adjust the listen interval, just ensure that the minimal.*/
+	/* listen interval * beacon interval no less than 600ms*/
+	DBGLOG(SAA, TRACE, "Use Dynamic DTIM skip count\n");
+	u2ListenInterval = MAX_DTIM_SKIP_COUNT;
+	if (IS_STA_IN_AIS(prStaRec)) {
+		prTargetBssDesc = scanSearchBssDescByBssid(prAdapter,
+							prAssocFrame->aucBSSID);
+		if (prTargetBssDesc == NULL) {
+			DBGLOG(SAA, ERROR, "BSS not exist!!\n");
+		} else {
+			if (prTargetBssDesc->u2BeaconInterval >= 600)
+				u2ListenInterval = 1;
+			else if (prTargetBssDesc->u2BeaconInterval >= 300)
+				u2ListenInterval = 2;
+			else if (prTargetBssDesc->u2BeaconInterval >= 200)
+				u2ListenInterval = 3;
+		}
 	}
+
 	prStaRec->u2ListenInterval = u2ListenInterval;
 
 	/* Fill the Listen Interval field. */

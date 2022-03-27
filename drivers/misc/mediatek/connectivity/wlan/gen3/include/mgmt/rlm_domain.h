@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/include/mgmt/rlm_domain.h#1
 */
 
@@ -324,6 +336,7 @@
 #define COUNTRY_CODE_ZA (((UINT_16) 'Z' << 8) | (UINT_16) 'A')	/* South Africa                        */
 #define COUNTRY_CODE_ZM (((UINT_16) 'Z' << 8) | (UINT_16) 'M')	/* Zambia                              */
 #define COUNTRY_CODE_ZW (((UINT_16) 'Z' << 8) | (UINT_16) 'W')	/* Zimbabwe                            */
+#define COUNTRY_CODE_WW (((UINT_16) 'W' << 8) | (UINT_16) 'W')	/* WordWide                            */
 
 /* dot11RegDomainsSupportValue */
 #define MIB_REG_DOMAIN_FCC              0x10	/* FCC (US) */
@@ -355,6 +368,11 @@
 #define MAX_CMD_SUPPORT_CHANNEL_NUM	64
 
 #endif
+
+#define REGION_CODE_FCC (((UINT_16) 'U' << 8) | (UINT_16) 'S')	/* US                                  */
+#define REGION_CODE_JP (((UINT_16) 'J' << 8) | (UINT_16) 'P')	/* JP                                  */
+#define REGION_CODE_CE (((UINT_16) 'E' << 8) | (UINT_16) 'U')	/* EU                                  */
+#define REGION_CODE_WW (((UINT_16) 'W' << 8) | (UINT_16) 'W')	/* WW                                  */
 
 /*******************************************************************************
 *                             D A T A   T Y P E S
@@ -562,6 +580,14 @@ typedef struct _SUBBAND_CHANNEL_T {
 
 #endif
 
+
+/* Use it as all available channel list for STA */
+typedef struct _TX_PWR_REGION_INFO_ENTRY {
+	PUINT_16 pu2RegionGroup;
+	UINT_32 u4CountryNum;
+	UINT_16 u2RegionCode;
+} TX_PWR_REGION_INFO_ENTRY, *P_TX_PWR_REGION_INFO_ENTRY;
+
 /*******************************************************************************
 *                            P U B L I C   D A T A
 ********************************************************************************
@@ -622,6 +648,12 @@ UINT_16 rlmDomainPwrLimitDefaultTableDecision(P_ADAPTER_T prAdapter, UINT_16 u2C
 
 VOID rlmDomainSendPwrLimitCmd(P_ADAPTER_T prAdapter);
 #endif
+BOOLEAN rlmIsValidCountryCode(UINT_16 u2Country);
+
+UINT_16
+rlmConvertCountry2Region(
+	IN P_ADAPTER_T prAdapter,
+	IN PUINT_16 pu2CountryCode);
 
 /*******************************************************************************
 *                              F U N C T I O N S

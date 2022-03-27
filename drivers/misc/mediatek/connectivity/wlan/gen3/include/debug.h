@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/include/debug.h#1
 */
 
@@ -3667,7 +3679,7 @@ typedef enum _ENUM_DBG_MODULE_T {
 	do { \
 		if ((aucDebugModule[DBG_##_Module##_IDX] & DBG_CLASS_##_Class) == 0) \
 			break; \
-		pr_debug(WLAN_TAG"%s:(" #_Module " " #_Class ")"_Fmt, __func__, ##__VA_ARGS__); \
+		pr_err(WLAN_TAG"%s:(" #_Module " " #_Class ")"_Fmt, __func__, ##__VA_ARGS__); \
 	} while (0)
 
 #define DBGLOG1(_Module, _Class, _Fmt) \
@@ -3758,8 +3770,19 @@ typedef enum _ENUM_DBG_MODULE_T {
 		}
 #endif /* WINDOWS_CE */
 #else
-#define ASSERT(_exp)
-#define ASSERT_REPORT(_exp, _fmt)
+#define ASSERT(_exp) \
+		{ \
+			if (!(_exp) && !fgIsBusAccessFailed) { \
+				LOG_FUNC("Assertion failed: %s:%d (%s)\n", __FILE__, __LINE__, #_exp); \
+			} \
+		}
+#define ASSERT_REPORT(_exp, _fmt) \
+		{ \
+			if (!(_exp) && !fgIsBusAccessFailed) { \
+				LOG_FUNC("Assertion failed: %s:%d (%s)\n", __FILE__, __LINE__, #_exp); \
+				LOG_FUNC _fmt; \
+			} \
+		}
 #endif /* BUILD_QA_DBG */
 
 /* The following macro is used for debugging packed structures. */

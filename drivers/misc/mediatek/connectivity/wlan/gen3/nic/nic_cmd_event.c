@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/nic/nic_cmd_event.c#3
 */
 
@@ -1366,7 +1378,69 @@ VOID nicOidCmdEnterRFTestTimeout(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmd
 
 VOID nicEventQueryMemDump(IN P_ADAPTER_T prAdapter, IN PUINT_8 pucEventBuf)
 {
-//	return;
+	static UINT_8 aucPath[256];
+	static UINT_8 aucPath_done[300];
+	static UINT_32 u4CurTimeTick;
+	P_EVENT_DUMP_MEM_T prEventDumpMem;
+
+	ASSERT(prAdapter);
+	ASSERT(pucEventBuf);
+
+	sprintf(aucPath, "/data/blbist/dump_%05d.hex", g_u2DumpIndex);
+
+	prEventDumpMem = (P_EVENT_DUMP_MEM_T) (pucEventBuf);
+
+	if (kalCheckPath(aucPath) == -1) {
+		kalMemSet(aucPath, 0x00, 256);
+		sprintf(aucPath, "/data/dump_%05d.hex", g_u2DumpIndex);
+	}
+
+	if (prEventDumpMem->ucFragNum == 1) {
+		/* Store memory dump into sdcard,
+		 * path /sdcard/dump_<current  system tick>_<memory address>_<memory length>.hex
+		 */
+		u4CurTimeTick = kalGetTimeTick();
+#if defined(LINUX)
+
+		/*if blbist mkdir undre /data/blbist, the dump files wouls put on it */
+		sprintf(aucPath, "/data/blbist/dump_%05d.hex", g_u2DumpIndex);
+		if (kalCheckPath(aucPath) == -1) {
+			kalMemSet(aucPath, 0x00, 256);
+			sprintf(aucPath, "/data/dump_%05d.hex", g_u2DumpIndex);
+		}
+#else
+		kal_sprintf_ddk(aucPath, sizeof(aucPath),
+				u4CurTimeTick,
+				prEventDumpMem->u4Address, prEventDumpMem->u4Length + prEventDumpMem->u4RemainLength);
+#endif
+		kalWriteToFile(aucPath, FALSE, &prEventDumpMem->aucBuffer[0], prEventDumpMem->u4Length);
+	} else {
+		/* Append current memory dump to the hex file */
+		kalWriteToFile(aucPath, TRUE, &prEventDumpMem->aucBuffer[0], prEventDumpMem->u4Length);
+	}
+	DBGLOG(INIT, INFO,
+	       ": ==> (u4RemainLength = %x, u4Address=%x )\n", prEventDumpMem->u4RemainLength,
+		prEventDumpMem->u4Address);
+
+	if (prEventDumpMem->u4RemainLength == 0 || prEventDumpMem->u4Address == 0xFFFFFFFF) {
+
+		/* The request is finished or firmware response a error */
+		/* Reply time tick to iwpriv */
+
+		g_bIcapEnable = FALSE;
+		g_bCaptureDone = TRUE;
+
+		sprintf(aucPath_done, "/data/blbist/file_dump_done.txt");
+		if (kalCheckPath(aucPath_done) == -1) {
+			kalMemSet(aucPath_done, 0x00, 256);
+			sprintf(aucPath_done, "/data/file_dump_done.txt");
+		}
+		DBGLOG(INIT, INFO, ": ==> gen done_file\n");
+		kalWriteToFile(aucPath_done, FALSE, aucPath_done, sizeof(aucPath_done));
+		g_u2DumpIndex++;
+
+	}
+
 }
 
 /*----------------------------------------------------------------------------*/
@@ -1384,7 +1458,122 @@ VOID nicEventQueryMemDump(IN P_ADAPTER_T prAdapter, IN PUINT_8 pucEventBuf)
 /*----------------------------------------------------------------------------*/
 VOID nicCmdEventQueryMemDump(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmdInfo, IN PUINT_8 pucEventBuf)
 {
-//	return;
+	static UINT_8 aucPath[256];
+	static UINT_8 aucPath_done[300];
+	static UINT_32 u4CurTimeTick;
+	P_PARAM_CUSTOM_MEM_DUMP_STRUCT_T prMemDumpInfo;
+	P_GLUE_INFO_T prGlueInfo;
+	P_EVENT_DUMP_MEM_T prEventDumpMem;
+	UINT_32 u4QueryInfoLen;
+
+	ASSERT(prAdapter);
+	ASSERT(prCmdInfo);
+	ASSERT(pucEventBuf);
+
+	/* 4 <2> Update information of OID */
+	if (1) {
+		prGlueInfo = prAdapter->prGlueInfo;
+		prEventDumpMem = (P_EVENT_DUMP_MEM_T) (pucEventBuf);
+
+		u4QueryInfoLen = sizeof(P_PARAM_CUSTOM_MEM_DUMP_STRUCT_T);
+
+		prMemDumpInfo = (P_PARAM_CUSTOM_MEM_DUMP_STRUCT_T) prCmdInfo->pvInformationBuffer;
+		prMemDumpInfo->u4Address = prEventDumpMem->u4Address;
+		prMemDumpInfo->u4Length = prEventDumpMem->u4Length;
+		prMemDumpInfo->u4RemainLength = prEventDumpMem->u4RemainLength;
+		prMemDumpInfo->ucFragNum = prEventDumpMem->ucFragNum;
+
+#if 0
+		do {
+			UINT_32 i = 0;
+
+			DBGLOG(REQ, TRACE, "Rx dump address 0x%X, Length %d, FragNum %d, remain %d\n",
+			       prEventDumpMem->u4Address,
+			       prEventDumpMem->u4Length, prEventDumpMem->ucFragNum, prEventDumpMem->u4RemainLength);
+#if 0
+			for (i = 0; i < prEventDumpMem->u4Length; i++) {
+				DBGLOG(REQ, TRACE, "%02X ", prEventDumpMem->aucBuffer[i]);
+				if (i % 32 == 31)
+					DBGLOG(REQ, TRACE, "\n");
+			}
+#endif
+		} while (FALSE);
+#endif
+
+		if (prEventDumpMem->ucFragNum == 1) {
+			/* Store memory dump into sdcard,
+			 * path /sdcard/dump_<current  system tick>_<memory address>_<memory length>.hex
+			 */
+			u4CurTimeTick = kalGetTimeTick();
+#if defined(LINUX)
+#if 0
+			sprintf(aucPath, "/sdcard/dump_%ld_0x%08lX_%ld.hex",
+				u4CurTimeTick,
+				prEventDumpMem->u4Address, prEventDumpMem->u4Length + prEventDumpMem->u4RemainLength);
+#else
+
+			/*if blbist mkdir undre /data/blbist, the dump files wouls put on it */
+			sprintf(aucPath, "/data/blbist/dump_%05d.hex", g_u2DumpIndex);
+			if (kalCheckPath(aucPath) == -1) {
+				kalMemSet(aucPath, 0x00, 256);
+				sprintf(aucPath, "/data/dump_%05d.hex", g_u2DumpIndex);
+			}
+#endif
+#else
+			kal_sprintf_ddk(aucPath, sizeof(aucPath),
+					u4CurTimeTick,
+					prEventDumpMem->u4Address,
+					prEventDumpMem->u4Length + prEventDumpMem->u4RemainLength);
+			/* strcpy(aucPath, "dump.hex"); */
+#endif
+			kalWriteToFile(aucPath, FALSE, &prEventDumpMem->aucBuffer[0], prEventDumpMem->u4Length);
+		} else {
+			/* Append current memory dump to the hex file */
+			kalWriteToFile(aucPath, TRUE, &prEventDumpMem->aucBuffer[0], prEventDumpMem->u4Length);
+		}
+
+		if (prEventDumpMem->u4RemainLength == 0 || prEventDumpMem->u4Address == 0xFFFFFFFF) {
+			/* The request is finished or firmware response a error */
+			/* Reply time tick to iwpriv */
+			if (prCmdInfo->fgIsOid) {
+
+				/* the oid would be complete only in oid-trigger  mode,
+				 * that is no need to if the event-trigger */
+				if (g_bIcapEnable == FALSE) {
+					*((PUINT_32) prCmdInfo->pvInformationBuffer) = u4CurTimeTick;
+					kalOidComplete(prGlueInfo, prCmdInfo->fgSetQuery,
+						       u4QueryInfoLen, WLAN_STATUS_SUCCESS);
+				}
+			}
+			g_bIcapEnable = FALSE;
+			g_bCaptureDone = TRUE;
+#if defined(LINUX)
+			sprintf(aucPath_done, "/data/blbist/file_dump_done.txt");
+			if (kalCheckPath(aucPath_done) == -1) {
+				kalMemSet(aucPath_done, 0x00, 256);
+				sprintf(aucPath_done, "/data/file_dump_done.txt");
+			}
+			DBGLOG(INIT, INFO, ": ==> gen done_file\n");
+			kalWriteToFile(aucPath_done, FALSE, aucPath_done, sizeof(aucPath_done));
+			g_u2DumpIndex++;
+
+#else
+			kal_sprintf_done_ddk(aucPath_done, sizeof(aucPath_done));
+			kalWriteToFile(aucPath_done, FALSE, aucPath_done, sizeof(aucPath_done));
+#endif
+		} else {
+#if defined(LINUX)
+
+#else /* 2013/05/26 fw would try to send the buffer successfully */
+			/* The memory dump request is not finished, Send next command */
+			wlanSendMemDumpCmd(prAdapter,
+					   prCmdInfo->pvInformationBuffer, prCmdInfo->u4InformationBufferLength);
+#endif
+		}
+	}
+
+	return;
+
 }
 
 #if CFG_SUPPORT_BATCH_SCAN
@@ -1506,8 +1695,19 @@ VOID nicCmdEventQueryStaStatistics(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prC
 
 			prStaStatistics->u4TxFailCount = prEvent->u4TxFailCount;
 			prStaStatistics->u4TxLifeTimeoutCount = prEvent->u4TxLifeTimeoutCount;
+			prStaStatistics->u4TransmitCount = prEvent->u4TransmitCount;
+			prStaStatistics->u4TransmitFailCount = prEvent->u4TransmitFailCount;
 
 			prStaRec = cnmGetStaRecByIndex(prAdapter, prEvent->ucStaRecIdx);
+			DBGLOG(RX, TRACE, "prEvent->ucStaRecIdx:%d, (%d, %d, %d, %d, %d, %d) prStaRec:%p\n",
+				prEvent->ucStaRecIdx,
+				prStaStatistics->ucPer,
+				prStaStatistics->ucRcpi,
+				prStaStatistics->u4TxFailCount,
+				prStaStatistics->u4TxLifeTimeoutCount,
+				prStaStatistics->u4TransmitCount,
+				prStaStatistics->u4TransmitFailCount,
+				prStaRec);
 
 			if (prStaRec) {
 				/*link layer statistics */
@@ -1522,6 +1722,16 @@ VOID nicCmdEventQueryStaStatistics(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prC
 					    prEvent->arLinkStatistics[eAci].u4TxFailMsdu;
 					prStaRec->arLinkStatistics[eAci].u4TxRetryMsdu =
 					    prEvent->arLinkStatistics[eAci].u4TxRetryMsdu;
+				}
+				if (prStaRec->u4MacTxCnt > (prStaRec->u4MacTxCnt + prStaStatistics->u4TransmitCount)) {
+					DBGLOG(RX, INFO, "TxCnt buf overflow, reset it\n");
+					prStaRec->u4MacTxCnt = prStaStatistics->u4TransmitCount;
+					prStaRec->u4MacTxNoAckCnt = prStaStatistics->u4TransmitFailCount;
+				} else {
+					prStaRec->u4MacTxCnt += prStaStatistics->u4TransmitCount;
+					prStaRec->u4MacTxNoAckCnt += prStaStatistics->u4TransmitFailCount;
+					prStaStatistics->u4TransmitCount = prStaRec->u4MacTxCnt;
+					prStaStatistics->u4TransmitFailCount = prStaRec->u4MacTxNoAckCnt;
 				}
 			}
 			if (prEvent->u4TxCount) {
@@ -1626,5 +1836,82 @@ VOID nicCmdEventQueryLTESafeChn(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmdI
 		kalOidComplete(prGlueInfo, prCmdInfo->fgSetQuery, u4QueryInfoLen, WLAN_STATUS_SUCCESS);
 	}
 
+}
+#endif
+/*----------------------------------------------------------------------------*/
+/*!
+* @brief This function is called when event for debug counter information
+*        has been retrieved
+*
+* @param prAdapter          Pointer to the Adapter structure.
+* @param prCmdInfo          Pointer to the command information
+* @param pucEventBuf        Pointer to the event buffer
+*
+* @return none
+*
+*/
+/*----------------------------------------------------------------------------*/
+VOID nicCmdEventDbgCntr(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmdInfo, IN PUINT_8 pucEventBuf)
+{
+	UINT_32 u4QueryInfoLen;
+	P_GLUE_INFO_T prGlueInfo;
+
+	ASSERT(prAdapter);
+	ASSERT(prCmdInfo);
+	ASSERT(pucEventBuf);
+
+	/* 4 <2> Update information of OID */
+	if (prCmdInfo->fgIsOid) {
+
+		prGlueInfo = prAdapter->prGlueInfo;
+
+		u4QueryInfoLen = sizeof(CMD_SW_DBG_CTRL_T);
+		kalMemCopy(prCmdInfo->pvInformationBuffer, pucEventBuf, sizeof(CMD_SW_DBG_CTRL_T));
+
+		kalOidComplete(prGlueInfo, prCmdInfo->fgSetQuery, u4QueryInfoLen, WLAN_STATUS_SUCCESS);
+	}
+
+}
+
+#if CFG_SUPPORT_REPLAY_DETECTION
+VOID nicCmdEventSetAddKey(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmdInfo, IN PUINT_8 pucEventBuf)
+{
+	P_WIFI_CMD_T prWifiCmd = NULL;
+	P_CMD_802_11_KEY prCmdKey = NULL;
+	P_GLUE_INFO_T prGlueInfo = NULL;
+	struct GL_DETECT_REPLAY_INFO *prDetRplyInfo = NULL;
+
+	ASSERT(prAdapter);
+	ASSERT(prCmdInfo);
+
+	if (prCmdInfo->fgIsOid) {
+		/* Update Set Information Length */
+		kalOidComplete(prAdapter->prGlueInfo,
+			       prCmdInfo->fgSetQuery, prCmdInfo->u4InformationBufferLength, WLAN_STATUS_SUCCESS);
+	}
+
+	prGlueInfo = prAdapter->prGlueInfo;
+	prDetRplyInfo = &prGlueInfo->prDetRplyInfo;
+	if (pucEventBuf) {
+		prWifiCmd = (P_WIFI_CMD_T) (pucEventBuf);
+		prCmdKey = (P_CMD_802_11_KEY) (prWifiCmd->aucBuffer);
+		if (!prCmdKey->ucKeyType) {
+			prDetRplyInfo->ucCurKeyId = prCmdKey->ucKeyId;
+			prDetRplyInfo->ucKeyType = prCmdKey->ucKeyType;
+			prDetRplyInfo->arReplayPNInfo[prCmdKey->ucKeyId].fgRekey = TRUE;
+			prDetRplyInfo->arReplayPNInfo[prCmdKey->ucKeyId].fgFirstPkt = TRUE;
+			DBGLOG(NIC, ERROR, "Keyid is %d, ucKeyType is %d\n",
+				prCmdKey->ucKeyId, prCmdKey->ucKeyType);
+		}
+	}
+}
+
+VOID nicOidCmdTimeoutSetAddKey(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmdInfo)
+{
+	ASSERT(prAdapter);
+
+	DBGLOG(NIC, WARN, "Wlan setaddkey timeout.\n");
+	if (prCmdInfo->fgIsOid)
+		kalOidComplete(prAdapter->prGlueInfo, prCmdInfo->fgSetQuery, 0, WLAN_STATUS_FAILURE);
 }
 #endif

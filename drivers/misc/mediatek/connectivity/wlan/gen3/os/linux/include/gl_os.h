@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/os/linux/include/gl_os.h#4
 */
 
@@ -667,6 +679,14 @@ extern BOOLEAN fgIsBusAccessFailed;
 #define GLUE_FLAG_RX_TO_OS_BIT      (14)
 #define GLUE_FLAG_HIF_FW_OWN_BIT    (15)
 #endif
+#define GLUE_FLAG_FINISH_CHARGING	 	  BIT(16)
+#define GLUE_FLAG_FINISH_CHARGING_BIT		(16)
+
+/* Macros for flag operations for the Adapter structure */
+#define GLUE_SET_FLAG(_M, _F)           ((_M)->ulFlag |= (_F))
+#define GLUE_CLEAR_FLAG(_M, _F)         ((_M)->ulFlag &= ~(_F))
+#define GLUE_TEST_FLAG(_M, _F)          ((_M)->ulFlag & (_F))
+#define GLUE_TEST_FLAGS(_M, _F)         (((_M)->ulFlag & (_F)) == (_F))
 
 #define GLUE_BOW_KFIFO_DEPTH        (1024)
 /* #define GLUE_BOW_DEVICE_NAME        "MT6620 802.11 AMP" */
@@ -689,7 +709,26 @@ typedef struct _GL_WPA_INFO_T {
 #if CFG_SUPPORT_802_11W
 	UINT_32 u4Mfp;
 #endif
+#if CFG_SUPPORT_SUSPEND_GTK_OFFLOAD
+	UINT_8 aucKek[NL80211_KEK_LEN];
+	UINT_8 aucKck[NL80211_KCK_LEN];
+	UINT_8 aucReplayCtr[NL80211_REPLAY_CTR_LEN];
+#endif
 } GL_WPA_INFO_T, *P_GL_WPA_INFO_T;
+
+#if CFG_SUPPORT_REPLAY_DETECTION
+#define REPLY_NUM 4
+struct GL_REPLEY_PN_INFO {
+	UINT_8 auPN[16];
+	BOOLEAN fgRekey;
+	BOOLEAN fgFirstPkt;
+};
+struct GL_DETECT_REPLAY_INFO {
+	UINT_8 ucCurKeyId;
+	UINT_8 ucKeyType;
+	struct GL_REPLEY_PN_INFO arReplayPNInfo[REPLY_NUM];
+};
+#endif
 
 typedef enum _ENUM_NET_DEV_IDX_T {
 	NET_DEV_WLAN_IDX = 0,
@@ -834,6 +873,9 @@ struct _GLUE_INFO_T {
 
 	/*! \brief wext wpa related information */
 	GL_WPA_INFO_T rWpaInfo;
+#if CFG_SUPPORT_REPLAY_DETECTION
+	struct GL_DETECT_REPLAY_INFO prDetRplyInfo;
+#endif
 
 	/* Pointer to ADAPTER_T - main data structure of internal protocol stack */
 	P_ADAPTER_T prAdapter;
@@ -978,7 +1020,11 @@ struct _GLUE_INFO_T {
 
 	INT_32 i4RssiCache;
 	UINT_32 u4LinkSpeedCache;
-
+	struct DRV_COMMON_WORK_T rDrvWork;
+	struct LINK_MGMT rAppTxRxStat;
+	struct LINK_MGMT rOtherDataStat;
+	struct LINK_MGMT rSockAppMapCache;
+	struct DRV_PKT_STAT_T arDrvPktStat[DRV_PKT_NUM];
 };
 
 typedef irqreturn_t(*PFN_WLANISR) (int irq, void *dev_id, struct pt_regs *regs);
@@ -1004,8 +1050,16 @@ typedef struct _SUB_MODULE_HANDLER {
 
 enum TestModeCmdType {
 	TESTMODE_CMD_ID_SW_CMD = 1,
-	TESTMODE_CMD_ID_WAPI = 2,
-	TESTMODE_CMD_ID_HS20 = 3,
+	TESTMODE_CMD_ID_WAPI,
+	TESTMODE_CMD_ID_HS20,
+	TESTMODE_CMD_ID_POORLINK,
+	TESTMODE_CMD_ID_SUSPEND,
+	TESTMODE_CMD_ID_STATISTICS,
+	TESTMODE_CMD_ID_LINK_DETECT,
+	TESTMODE_CMD_ID_WAKEUP_STATISTICS,
+	TESTMODE_CMD_ID_RX_FILTER,
+	TESTMODE_CMD_ID_TX_HEARTBEAT,
+	TESTMODE_CMD_ID_TCP_HEARTBEAT,
 	NUM_OF_TESTMODE_CMD_ID
 };
 
@@ -1086,6 +1140,22 @@ typedef struct _PACKET_PRIVATE_DATA {
 	UINT_16 u2IpId;
 } PACKET_PRIVATE_DATA, *P_PACKET_PRIVATE_DATA;
 
+typedef struct _COUNTRY_POWER_TABLE {
+	UINT_8 auCountryCode[2];	/* ISO/IEC 3166-1 two-character country codes  */
+	TX_PWR_PARAM_T rTxPwr;
+	UINT_8 ucTxPwrValid;
+	BANDEDGE_2G_T r2GBandEdgePwr;
+	UINT_8 ucSupport5GBand;
+	AC_PWR_SETTING_STRUCT r11AcTxPwr;
+	UINT_8 uc11AcTxPwrValid;
+	BANDEDGE_5G_T r5GBandEdgePwr;
+} COUNTRY_POWER_TABLE, *P_COUNTRY_POWER_TABLE;
+
+struct board_id_power_table_map {
+	char board_id[5];
+	COUNTRY_POWER_TABLE *power_table;
+	int tbl_size;
+};
 /*******************************************************************************
 *                            P U B L I C   D A T A
 ********************************************************************************
@@ -1295,5 +1365,15 @@ VOID kalMetInit(IN P_GLUE_INFO_T prGlueInfo);
 #endif
 
 VOID wlanUpdateChannelTable(P_GLUE_INFO_T prGlueInfo);
+INT_32 wlanRegulatoryHint(PUINT_8 uCountryCode);
+P_COUNTRY_POWER_TABLE wlanGetUpdatedPowerTable(P_UINT_8 paucCountry);
+
+int glRegisterPlatformDev(void);
+int glUnregisterPlatformDev(void);
+int glWlanSetSuspendFlag(void);
+int glWlanGetSuspendFlag(void);
+int glWlanClearSuspendFlag(void);
+int glIndicateWoWPacket(void *data);
+int glWlanSetIndicateWoWFlag(void);
 
 #endif /* _GL_OS_H */

@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/mgmt/saa_fsm.c#2
 */
 
@@ -421,8 +433,7 @@ saaFsmSteps(IN P_ADAPTER_T prAdapter,
 		case SAA_STATE_SEND_AUTH1:
 
 			/* Do tasks in INIT STATE */
-			if (prStaRec->ucTxAuthAssocRetryCount >= prStaRec->ucTxAuthAssocRetryLimit) {
-
+			if ((prStaRec->ucTxAuthAssocRetryCount >= prStaRec->ucTxAuthAssocRetryLimit) || (GLUE_TEST_FLAG(prAdapter->prGlueInfo, GLUE_FLAG_HALT))) {
 				/* Record the Status Code of Authentication Request */
 				prStaRec->u2StatusCode = STATUS_CODE_AUTH_TIMEOUT;
 
@@ -464,8 +475,7 @@ saaFsmSteps(IN P_ADAPTER_T prAdapter,
 		case SAA_STATE_SEND_AUTH3:
 
 			/* Do tasks in INIT STATE */
-			if (prStaRec->ucTxAuthAssocRetryCount >= prStaRec->ucTxAuthAssocRetryLimit) {
-
+			if ((prStaRec->ucTxAuthAssocRetryCount >= prStaRec->ucTxAuthAssocRetryLimit) || (GLUE_TEST_FLAG(prAdapter->prGlueInfo, GLUE_FLAG_HALT))) {
 				/* Record the Status Code of Authentication Request */
 				prStaRec->u2StatusCode = STATUS_CODE_AUTH_TIMEOUT;
 
@@ -503,8 +513,7 @@ saaFsmSteps(IN P_ADAPTER_T prAdapter,
 
 		case SAA_STATE_SEND_ASSOC1:
 			/* Do tasks in INIT STATE */
-			if (prStaRec->ucTxAuthAssocRetryCount >= prStaRec->ucTxAuthAssocRetryLimit) {
-
+			if ((prStaRec->ucTxAuthAssocRetryCount >= prStaRec->ucTxAuthAssocRetryLimit) || (GLUE_TEST_FLAG(prAdapter->prGlueInfo, GLUE_FLAG_HALT))) {
 				/* Record the Status Code of Authentication Request */
 				prStaRec->u2StatusCode = STATUS_CODE_ASSOC_TIMEOUT;
 
@@ -1203,7 +1212,7 @@ WLAN_STATUS saaFsmRunEventRxDeauth(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prSwR
 					prAisSpecBssInfo = &(prAdapter->rWifiVar.rAisSpecificBssInfo);
 
 					DBGLOG(RSN, INFO,
-					       "QM RX MGT: Deauth frame, P=%d Sec=%d CM=%d BC=%d fc=%02x\n",
+					       "QM RX MGT: Deauth frame, P=%d Sec=%d CM=%d BC=%d fc=%02hx\n",
 						prAisSpecBssInfo->fgMgmtProtection,
 						HAL_RX_STATUS_GET_SEC_MODE(prSwRfb->prRxStatus),
 						HAL_RX_STATUS_IS_CIPHER_MISMATCH(prSwRfb->prRxStatus),
@@ -1384,7 +1393,7 @@ WLAN_STATUS saaFsmRunEventRxDisassoc(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prS
 					prAisSpecBssInfo = &(prAdapter->rWifiVar.rAisSpecificBssInfo);
 
 					DBGLOG(RSN, INFO,
-					       "QM RX MGT: Disassoc frame, P=%d Sec=%d CM=%d BC=%d fc=%02x\n",
+					       "QM RX MGT: Disassoc frame, P=%d Sec=%d CM=%d BC=%d fc=%02hx\n",
 						prAisSpecBssInfo->fgMgmtProtection,
 						HAL_RX_STATUS_GET_SEC_MODE(prSwRfb->prRxStatus),
 						HAL_RX_STATUS_IS_CIPHER_MISMATCH(prSwRfb->prRxStatus),

@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/os/linux/include/gl_wext_priv.h#3
 */
 
@@ -198,7 +210,7 @@
 
 #define PRIV_CMD_WSC_PROBE_REQ          22
 
-#define PRIV_CMD_P2P_VERSION                   23
+#define PRIV_CMD_P2P_VERSION		23
 
 #define PRIV_CMD_GET_CH_LIST            24
 
@@ -211,6 +223,19 @@
 #define PRIV_CMD_P2P_MODE               28
 
 #define PRIV_CMD_MET_PROFILING          33
+
+#define PRIV_CMD_STAT			34
+
+#define PRIV_CMD_CONNSTATUS		35
+
+#define PRIV_CMD_SHOW_CHANNEL		36
+
+#define PRIV_CMD_SET_RESETCOUNTER	37
+
+#define PRIV_CMD_INT_STAT		38
+
+#define PRIV_CMD_DTIM_SKIP_COUNT	39
+
 /* 802.3 Objects (Ethernet) */
 #define OID_802_3_CURRENT_ADDRESS           0x01010102
 
@@ -266,6 +291,8 @@
 #define OID_CUSTOM_MTK_NVRAM_RW                         0xFFA0C941
 #define OID_CUSTOM_CFG_SRC_TYPE                         0xFFA0C942
 #define OID_CUSTOM_EEPROM_TYPE                          0xFFA0C943
+
+#define OID_CUSTOM_SET_RESETCOUNTER                     0xFFA0C9A0
 
 #if CFG_SUPPORT_WAPI
 #define OID_802_11_WAPI_MODE                            0xFFA0CA00

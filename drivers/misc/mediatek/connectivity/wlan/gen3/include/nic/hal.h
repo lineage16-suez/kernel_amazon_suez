@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/include/nic/hal.h#1
 */
 
@@ -161,11 +173,11 @@ do { \
 		if (kalDevRegRead(_prAdapter->prGlueInfo, _u4Offset, _pu4Value) == FALSE) {\
 			HAL_SET_FLAG(_prAdapter, ADAPTER_FLAG_HW_ERR); \
 			fgIsBusAccessFailed = TRUE; \
-			DBGLOG(HAL, ERROR, "HAL_MCR_RD access fail! 0x%lx: 0x%lx\n", \
+			DBGLOG(HAL, ERROR, "HAL_MCR_RD access fail! 0x%x: 0x%x\n", \
 				(UINT_32) (_u4Offset), *((PUINT_32) (_pu4Value))); \
 		} \
 	} else { \
-		DBGLOG(HAL, WARN, "ignore HAL_MCR_RD access! 0x%lx\n", \
+		DBGLOG(HAL, WARN, "ignore HAL_MCR_RD access! 0x%x\n", \
 			(UINT_32) (_u4Offset)); \
 	} \
 } while (0)
@@ -179,11 +191,11 @@ do { \
 		if (kalDevRegWrite(_prAdapter->prGlueInfo, _u4Offset, _u4Value) == FALSE) {\
 			HAL_SET_FLAG(_prAdapter, ADAPTER_FLAG_HW_ERR); \
 			fgIsBusAccessFailed = TRUE; \
-			DBGLOG(HAL, ERROR, "HAL_MCR_WR access fail! 0x%lx: 0x%lx\n", \
+			DBGLOG(HAL, ERROR, "HAL_MCR_WR access fail! 0x%x: 0x%x\n", \
 				(UINT_32) (_u4Offset), (UINT_32) (_u4Value)); \
 		} \
 	} else { \
-		DBGLOG(HAL, WARN, "ignore HAL_MCR_WR access! 0x%lx: 0x%lx\n", \
+		DBGLOG(HAL, WARN, "ignore HAL_MCR_WR access! 0x%x: 0x%x\n", \
 			(UINT_32) (_u4Offset), (UINT_32) (_u4Value)); \
 	} \
 } while (0)
@@ -203,13 +215,13 @@ do { \
 			} \
 			HAL_SET_FLAG(_prAdapter, ADAPTER_FLAG_HW_ERR); \
 			fgIsBusAccessFailed = TRUE; \
-			DBGLOG(HAL, ERROR, "HAL_PORT_RD access fail! 0x%lx\n", \
+			DBGLOG(HAL, ERROR, "HAL_PORT_RD access fail! 0x%x\n", \
 				(UINT_32) (_u4Port)); \
 			glResetTrigger(_prAdapter); \
 			break; \
 		} \
 	} else { \
-		DBGLOG(HAL, WARN, "ignore HAL_PORT_RD access! 0x%lx\n", \
+		DBGLOG(HAL, WARN, "ignore HAL_PORT_RD access! 0x%x\n", \
 			(UINT_32) (_u4Port)); \
 	} \
 }
@@ -229,13 +241,13 @@ do { \
 			} \
 			HAL_SET_FLAG(_prAdapter, ADAPTER_FLAG_HW_ERR); \
 			fgIsBusAccessFailed = TRUE; \
-			DBGLOG(HAL, ERROR, "HAL_PORT_WR access fail! 0x%lx\n", \
+			DBGLOG(HAL, ERROR, "HAL_PORT_WR access fail! 0x%x\n", \
 				(UINT_32) (_u4Port)); \
 			glResetTrigger(_prAdapter); \
 			break; \
 		} \
 	} else { \
-		DBGLOG(HAL, WARN, "ignore HAL_PORT_WR access! 0x%lx\n", \
+		DBGLOG(HAL, WARN, "ignore HAL_PORT_WR access! 0x%x\n", \
 			(UINT_32) (_u4Port)); \
 	} \
 }
@@ -249,7 +261,7 @@ do { \
 		if (kalDevWriteWithSdioCmd52(_prAdapter->prGlueInfo, _u4Port, _ucBuf) == FALSE) {\
 			HAL_SET_FLAG(_prAdapter, ADAPTER_FLAG_HW_ERR); \
 			fgIsBusAccessFailed = TRUE; \
-			DBGLOG(HAL, ERROR, "HAL_BYTE_WR access fail! 0x%lx\n", \
+			DBGLOG(HAL, ERROR, "HAL_BYTE_WR access fail! 0x%x\n", \
 				(UINT_32)(_u4Port)); \
 		} \
 		else { \
@@ -257,7 +269,7 @@ do { \
 		} \
 	} \
 	else { \
-		DBGLOG(HAL, WARN, "ignore HAL_BYTE_WR access! 0x%lx\n", \
+		DBGLOG(HAL, WARN, "ignore HAL_BYTE_WR access! 0x%x\n", \
 			(UINT_32) (_u4Port)); \
 	} \
 }

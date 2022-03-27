@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/mgmt/scan.c#4
 */
 
@@ -742,6 +754,15 @@
 #define REPLICATED_BEACON_STRENGTH_THRESHOLD    (32)
 
 #define ROAMING_NO_SWING_RCPI_STEP              (10)
+#if AMZN_5GHZ_PREF
+#define RSSI_HI_5GHZ    (-60)
+#define RSSI_MED_5GHZ   (-67)
+#define RSSI_LO_5GHZ    (-70)
+
+#define PREF_HI_5GHZ    (20)
+#define PREF_MED_5GHZ   (15)
+#define PREF_LO_5GHZ    (3)
+#endif /* end AMZN_5GHZ_PREF */
 
 /*******************************************************************************
 *                             D A T A   T Y P E S
@@ -753,6 +774,14 @@
 ********************************************************************************
 */
 
+#if AMZN_5GHZ_PREF
+INT_32 rssiRangeHi = RSSI_HI_5GHZ;
+INT_32 rssiRangeMed = RSSI_MED_5GHZ;
+INT_32 rssiRangeLo = RSSI_LO_5GHZ;
+UINT_8 pref5GhzHi = PREF_HI_5GHZ;
+UINT_8 pref5GhzMed = PREF_MED_5GHZ;
+UINT_8 pref5GhzLo = PREF_LO_5GHZ;
+#endif /* end AMZN_5GHZ_PREF */
 /*******************************************************************************
 *                           P R I V A T E   D A T A
 ********************************************************************************
@@ -772,6 +801,50 @@
 *                              F U N C T I O N S
 ********************************************************************************
 */
+#if AMZN_5GHZ_PREF
+INT_32 adptClntAdjust5gPref(P_BSS_DESC_T prBssDesc)
+{
+	INT_32 rssi = RCPI_TO_dBm(prBssDesc->ucRCPI);
+	DBGLOG(SCN, INFO, "adptClntAdjust5gPref:: enter band=%d RSSI = %d\n",
+	prBssDesc->eBand, rssi);
+	if (prBssDesc->eBand == BAND_5G) {
+		if (rssi > rssiRangeHi)
+			rssi += pref5GhzHi;
+		else if (rssi > rssiRangeMed)
+			rssi += pref5GhzMed;
+		else if (rssi > rssiRangeLo)
+			rssi += pref5GhzLo;
+	}
+	/* Reduce chances of roam ping-pong */
+	if (prBssDesc->fgIsConnected)
+		rssi += (ROAMING_NO_SWING_RCPI_STEP >> 1);
+
+	DBGLOG(SCN, INFO, "adptClntAdjust5gPref:: exit RSSI = %d\n", rssi);
+	return rssi;
+}
+
+VOID scanSet5gRoamingPreference(INT_32 rangeHi, INT_32 rangeMed,
+	INT_32 rangeLow, UINT_8 pref5gHi, UINT_8 pref5gMed, UINT_8 pref5gLo)
+{
+	rssiRangeHi = rangeHi;
+	rssiRangeMed = rangeMed;
+	rssiRangeLo = rangeLow;
+	pref5GhzHi = pref5gHi;
+	pref5GhzMed = pref5gMed;
+	pref5GhzLo = pref5gLo;
+}
+VOID scanGet5gRoamingPreference(PINT_32 rangeHi, PINT_32 rangeMed,
+	PINT_32 rangeLow, PUINT_8 pref5gHi, PUINT_8 pref5gMed, PUINT_8 pref5gLo)
+{
+	*rangeHi = rssiRangeHi;
+	*rangeMed = rssiRangeMed;
+	*rangeLow = rssiRangeLo;
+	*pref5gHi = pref5GhzHi;
+	*pref5gMed = pref5GhzMed;
+	*pref5gLo = pref5GhzLo;
+}
+#endif /* end AMZN_5GHZ_PREF */
+
 /*----------------------------------------------------------------------------*/
 /*!
 * @brief This function is used by SCN to initialize its variables
@@ -787,11 +860,18 @@ VOID scnInit(IN P_ADAPTER_T prAdapter)
 	P_BSS_DESC_T prBSSDesc;
 	PUINT_8 pucBSSBuff;
 	UINT_32 i;
+#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
+	P_ROAM_BSS_DESC_T prRoamBSSDesc;
+	PUINT_8 pucRoamBSSBuff;
+#endif
 
 	ASSERT(prAdapter);
 
 	prScanInfo = &(prAdapter->rWifiVar.rScanInfo);
 	pucBSSBuff = &prScanInfo->aucScanBuffer[0];
+#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
+	pucRoamBSSBuff = &prScanInfo->aucScanRoamBuffer[0];
+#endif
 
 	DBGLOG(SCN, INFO, "->scnInit()\n");
 
@@ -804,9 +884,16 @@ VOID scnInit(IN P_ADAPTER_T prAdapter)
 
 	/* 4 <2> Reset link list of BSS_DESC_T */
 	kalMemZero((PVOID) pucBSSBuff, SCN_MAX_BUFFER_SIZE);
+#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
+	kalMemZero((PVOID) pucRoamBSSBuff, SCN_ROAM_MAX_BUFFER_SIZE);
+#endif
 
 	LINK_INITIALIZE(&prScanInfo->rFreeBSSDescList);
 	LINK_INITIALIZE(&prScanInfo->rBSSDescList);
+#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
+	LINK_INITIALIZE(&prScanInfo->rRoamFreeBSSDescList);
+	LINK_INITIALIZE(&prScanInfo->rRoamBSSDescList);
+#endif
 
 	for (i = 0; i < CFG_MAX_NUM_BSS_LIST; i++) {
 
@@ -818,6 +905,18 @@ VOID scnInit(IN P_ADAPTER_T prAdapter)
 	}
 	/* Check if the memory allocation consist with this initialization function */
 	ASSERT(((ULONG) pucBSSBuff - (ULONG)&prScanInfo->aucScanBuffer[0]) == SCN_MAX_BUFFER_SIZE);
+
+#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
+	for (i = 0; i < CFG_MAX_NUM_ROAM_BSS_LIST; i++) {
+		prRoamBSSDesc = (P_ROAM_BSS_DESC_T) pucRoamBSSBuff;
+
+		LINK_INSERT_TAIL(&prScanInfo->rRoamFreeBSSDescList, &prRoamBSSDesc->rLinkEntry);
+
+		pucRoamBSSBuff += ALIGN_4(sizeof(ROAM_BSS_DESC_T));
+	}
+	ASSERT(((ULONG)pucRoamBSSBuff - (ULONG)&prScanInfo->aucScanRoamBuffer[0]) ==
+		   SCN_ROAM_MAX_BUFFER_SIZE);
+#endif
 
 	/* reset freest channel information */
 	prScanInfo->fgIsSparseChannelValid = FALSE;
@@ -905,6 +1004,10 @@ VOID scnUninit(IN P_ADAPTER_T prAdapter)
 	/* 4 <2> Reset link list of BSS_DESC_T */
 	LINK_INITIALIZE(&prScanInfo->rFreeBSSDescList);
 	LINK_INITIALIZE(&prScanInfo->rBSSDescList);
+#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
+	LINK_INITIALIZE(&prScanInfo->rRoamFreeBSSDescList);
+	LINK_INITIALIZE(&prScanInfo->rRoamBSSDescList);
+#endif
 
 }				/* end of scnUninit() */
 
@@ -1059,6 +1162,188 @@ scanSearchExistingBssDesc(IN P_ADAPTER_T prAdapter,
 {
 	return scanSearchExistingBssDescWithSsid(prAdapter, eBSSType, aucBSSID, aucSrcAddr, FALSE, NULL);
 }
+#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
+/*----------------------------------------------------------------------------*/
+/*!
+* @brief
+*
+* @param
+*
+* @return
+*/
+/*----------------------------------------------------------------------------*/
+VOID scanRemoveRoamBssDescsByTime(IN P_ADAPTER_T prAdapter, IN UINT_32 u4RemoveTime)
+{
+	P_SCAN_INFO_T prScanInfo;
+	P_LINK_T prRoamBSSDescList;
+	P_LINK_T prRoamFreeBSSDescList;
+	P_ROAM_BSS_DESC_T prRoamBssDesc;
+	P_ROAM_BSS_DESC_T prRoamBSSDescNext;
+	OS_SYSTIME rCurrentTime;
+
+	ASSERT(prAdapter);
+
+	prScanInfo = &(prAdapter->rWifiVar.rScanInfo);
+	prRoamBSSDescList = &prScanInfo->rRoamBSSDescList;
+	prRoamFreeBSSDescList = &prScanInfo->rRoamFreeBSSDescList;
+
+	GET_CURRENT_SYSTIME(&rCurrentTime);
+
+	LINK_FOR_EACH_ENTRY_SAFE(prRoamBssDesc, prRoamBSSDescNext, prRoamBSSDescList, rLinkEntry,
+				 ROAM_BSS_DESC_T) {
+
+		if (CHECK_FOR_TIMEOUT(rCurrentTime, prRoamBssDesc->rUpdateTime,
+				      SEC_TO_SYSTIME(u4RemoveTime))) {
+
+			LINK_REMOVE_KNOWN_ENTRY(prRoamBSSDescList, prRoamBssDesc);
+			LINK_INSERT_TAIL(prRoamFreeBSSDescList, &prRoamBssDesc->rLinkEntry);
+		}
+	}
+}
+
+/*----------------------------------------------------------------------------*/
+/*!
+* @brief
+*
+* @param
+*
+* @return
+*/
+/*----------------------------------------------------------------------------*/
+P_ROAM_BSS_DESC_T
+scanSearchRoamBssDescBySsid(IN P_ADAPTER_T prAdapter, IN P_BSS_DESC_T prBssDesc)
+{
+	P_SCAN_INFO_T prScanInfo;
+	P_LINK_T prRoamBSSDescList;
+	P_ROAM_BSS_DESC_T prRoamBssDesc;
+
+	ASSERT(prAdapter);
+
+	prScanInfo = &(prAdapter->rWifiVar.rScanInfo);
+
+	prRoamBSSDescList = &prScanInfo->rRoamBSSDescList;
+
+	/* Search BSS Desc from current SCAN result list. */
+	LINK_FOR_EACH_ENTRY(prRoamBssDesc, prRoamBSSDescList, rLinkEntry, ROAM_BSS_DESC_T) {
+		if (EQUAL_SSID(prRoamBssDesc->aucSSID, prRoamBssDesc->ucSSIDLen,
+				       prBssDesc->aucSSID, prBssDesc->ucSSIDLen)) {
+			return prRoamBssDesc;
+		}
+	}
+
+	return NULL;
+
+}
+
+/*----------------------------------------------------------------------------*/
+/*!
+* @brief
+*
+* @param
+*
+* @return
+*/
+/*----------------------------------------------------------------------------*/
+P_ROAM_BSS_DESC_T scanAllocateRoamBssDesc(IN P_ADAPTER_T prAdapter)
+{
+	P_SCAN_INFO_T prScanInfo;
+	P_LINK_T prRoamFreeBSSDescList;
+	P_ROAM_BSS_DESC_T prRoamBssDesc = NULL;
+
+	ASSERT(prAdapter);
+	prScanInfo = &(prAdapter->rWifiVar.rScanInfo);
+
+	prRoamFreeBSSDescList = &prScanInfo->rRoamFreeBSSDescList;
+
+	LINK_REMOVE_HEAD(prRoamFreeBSSDescList, prRoamBssDesc, P_ROAM_BSS_DESC_T);
+
+	if (prRoamBssDesc) {
+		P_LINK_T prRoamBSSDescList;
+
+		kalMemZero(prRoamBssDesc, sizeof(ROAM_BSS_DESC_T));
+
+		prRoamBSSDescList = &prScanInfo->rRoamBSSDescList;
+
+		LINK_INSERT_HEAD(prRoamBSSDescList, &prRoamBssDesc->rLinkEntry);
+	}
+
+	return prRoamBssDesc;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/*!
+* @brief
+*
+* @param
+*
+* @return
+*/
+/*----------------------------------------------------------------------------*/
+VOID scanAddToRoamBssDesc(IN P_ADAPTER_T prAdapter, IN P_BSS_DESC_T prBssDesc)
+{
+	P_ROAM_BSS_DESC_T prRoamBssDesc;
+
+	prRoamBssDesc = scanSearchRoamBssDescBySsid(prAdapter, prBssDesc);
+
+	if (prRoamBssDesc == NULL) {
+		UINT_32 u4RemoveTime = REMOVE_TIMEOUT_TWO_DAY;
+
+		do {
+			prRoamBssDesc = scanAllocateRoamBssDesc(prAdapter);
+			if (prRoamBssDesc)
+				break;
+			scanRemoveRoamBssDescsByTime(prAdapter, u4RemoveTime);
+			u4RemoveTime = u4RemoveTime / 2;
+		} while (u4RemoveTime > 0);
+
+		COPY_SSID(prRoamBssDesc->aucSSID, prRoamBssDesc->ucSSIDLen,
+				prBssDesc->aucSSID, prBssDesc->ucSSIDLen);
+	}
+
+	GET_CURRENT_SYSTIME(&prRoamBssDesc->rUpdateTime);
+}
+
+
+/*----------------------------------------------------------------------------*/
+/*!
+* @brief
+*
+* @param
+*
+* @return
+*/
+/*----------------------------------------------------------------------------*/
+VOID scanSearchBssDescOfRoamSsid(IN P_ADAPTER_T prAdapter)
+{
+#define SSID_ONLY_EXIST_ONE_AP      1    /* If only exist one same ssid AP, avoid unnecessary scan */
+
+	P_SCAN_INFO_T prScanInfo;
+	P_LINK_T prBSSDescList;
+	P_BSS_DESC_T prBssDesc;
+	P_BSS_INFO_T prAisBssInfo;
+	UINT_32	u4SameSSIDCount = 0;
+
+	prAisBssInfo = prAdapter->prAisBssInfo;
+	prScanInfo = &(prAdapter->rWifiVar.rScanInfo);
+	prBSSDescList = &prScanInfo->rBSSDescList;
+
+	if (prAisBssInfo->eConnectionState != PARAM_MEDIA_STATE_CONNECTED)
+		return;
+
+	LINK_FOR_EACH_ENTRY(prBssDesc, prBSSDescList, rLinkEntry, BSS_DESC_T) {
+		if (EQUAL_SSID(prBssDesc->aucSSID, prBssDesc->ucSSIDLen,
+				       prAisBssInfo->aucSSID, prAisBssInfo->ucSSIDLen)) {
+			u4SameSSIDCount++;
+			if (u4SameSSIDCount > SSID_ONLY_EXIST_ONE_AP) {
+				scanAddToRoamBssDesc(prAdapter, prBssDesc);
+				break;
+			}
+		}
+	}
+}
+
+#endif /* CFG_SUPPORT_ROAMING_SKIP_ONE_AP */
 
 /*----------------------------------------------------------------------------*/
 /*!
@@ -1093,6 +1378,9 @@ scanSearchExistingBssDescWithSsid(IN P_ADAPTER_T prAdapter,
 	case BSS_TYPE_P2P_DEVICE:
 		fgCheckSsid = FALSE;
 	case BSS_TYPE_INFRASTRUCTURE:
+#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
+		scanSearchBssDescOfRoamSsid(prAdapter);
+#endif
 	case BSS_TYPE_BOW_DEVICE:
 		{
 			prBssDesc = scanSearchBssDescByBssidAndSsid(prAdapter, aucBSSID, fgCheckSsid, prSsid);
@@ -1278,6 +1566,16 @@ VOID scanRemoveBssDescsByPolicy(IN P_ADAPTER_T prAdapter, IN UINT_32 u4RemovePol
 					prBssDescWeakestSameSSID = prBssDesc;
 			}
 
+			if (prConnSettings->fgIsConnReqIssued &&
+				(EQUAL_SSID(prBssDesc->aucSSID, prBssDesc->ucSSIDLen,
+					prConnSettings->aucSSID, prConnSettings->ucSSIDLen))) {
+				/* Don't remove specific BSSID which driver are going to connect. */
+				DBGLOG(SCN, TRACE,
+				       "Don't free scan BSS Descriptor due to it is the target BSS!!\n");
+				continue;
+			}
+
+
 			if (!prBssDescWeakest) {	/* 1st element */
 				prBssDescWeakest = prBssDesc;
 				continue;
@@ -1288,8 +1586,17 @@ VOID scanRemoveBssDescsByPolicy(IN P_ADAPTER_T prAdapter, IN UINT_32 u4RemovePol
 
 		}
 
-		if ((u4SameSSIDCount >= SCN_BSS_DESC_SAME_SSID_THRESHOLD) && (prBssDescWeakestSameSSID))
-			prBssDescWeakest = prBssDescWeakestSameSSID;
+		if ((u4SameSSIDCount >= SCN_BSS_DESC_SAME_SSID_THRESHOLD) && (prBssDescWeakestSameSSID)) {
+			if (prConnSettings->fgIsConnByBssidIssued &&
+				(EQUAL_MAC_ADDR(prBssDescWeakestSameSSID->aucBSSID, prConnSettings->aucBSSID))) {
+				DBGLOG(SCN, TRACE, "Can't age this BSS Desc, due to this is target BSSID!!\n");
+			} else {
+				DBGLOG(SCN, TRACE,
+				       "Release weakest BSS descriptor due to same SSID & not BSSID connect!!\n");
+				prBssDescWeakest = prBssDescWeakestSameSSID;
+			}
+
+		}
 
 		if (prBssDescWeakest) {
 
@@ -1550,7 +1857,7 @@ P_BSS_DESC_T scanAddToBssDesc(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prSwRfb)
 	UINT_8 ucHwChannelNum = 0;
 	UINT_8 ucIeDsChannelNum = 0;
 	UINT_8 ucIeHtChannelNum = 0;
-	BOOLEAN fgIsValidSsid = FALSE, fgEscape = FALSE;
+	BOOLEAN fgIsValidSsid = FALSE, fgEscape = FALSE, fgIsCopy = FALSE;
 	PARAM_SSID_T rSsid;
 	UINT_64 u8Timestamp;
 	BOOLEAN fgIsNewBssDesc = FALSE;
@@ -1728,9 +2035,11 @@ P_BSS_DESC_T scanAddToBssDesc(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prSwRfb)
 		}
 	}
 #if 1
-
-	prBssDesc->u2RawLength = prSwRfb->u2PacketLen;
-	kalMemCopy(prBssDesc->aucRawBuf, prWlanBeaconFrame, prBssDesc->u2RawLength);
+	if ((prBssDesc->u2RawLength == 0) || (fgIsValidSsid)) {
+		prBssDesc->u2RawLength = prSwRfb->u2PacketLen;
+		kalMemCopy(prBssDesc->aucRawBuf, prWlanBeaconFrame, prBssDesc->u2RawLength);
+		fgIsCopy = TRUE;
+	}
 #endif
 
 	/* NOTE: Keep consistency of Scan Record during JOIN process */
@@ -1759,13 +2068,17 @@ P_BSS_DESC_T scanAddToBssDesc(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prSwRfb)
 	} else {
 		prBssDesc->fgIsIEOverflow = FALSE;
 	}
-	prBssDesc->u2IELength = u2IELength;
 
-	kalMemCopy(prBssDesc->aucIEBuf, prWlanBeaconFrame->aucInfoElem, u2IELength);
+	if (fgIsCopy) {
+		prBssDesc->u2IELength = u2IELength;
+
+		kalMemCopy(prBssDesc->aucIEBuf, prWlanBeaconFrame->aucInfoElem, u2IELength);
+	}
 
 	/* 4 <2.2> reset prBssDesc variables in case that AP has been reconfigured */
 	prBssDesc->fgIsERPPresent = FALSE;
 	prBssDesc->fgIsHTPresent = FALSE;
+	prBssDesc->fgIsVHTPresent = FALSE;
 	prBssDesc->eSco = CHNL_EXT_SCN;
 	prBssDesc->fgIEWAPI = FALSE;
 	prBssDesc->fgIERSN = FALSE;
@@ -2395,8 +2708,8 @@ P_BSS_DESC_T scanSearchBssDescByPolicy(IN P_ADAPTER_T prAdapter, IN UINT_8 ucBss
 		prConnSettings->aucSSID[prConnSettings->ucSSIDLen] = '\0';
 #endif
 
-	DBGLOG(SCN, INFO, "SEARCH: Num Of BSS_DESC_T = %d, Look for SSID: %s\n",
-	       prBSSDescList->u4NumElem, prConnSettings->aucSSID);
+	DBGLOG(SCN, INFO, "SEARCH: Num Of BSS_DESC_T = %d, Look for SSID: XXX\n");
+	DBGLOG(SCN, TRACE, "SSID is : %s\n", prConnSettings->aucSSID);
 
 	/* 4 <1> The outer loop to search for a candidate. */
 	LINK_FOR_EACH_ENTRY(prBssDesc, prBSSDescList, rLinkEntry, BSS_DESC_T) {
@@ -2755,6 +3068,65 @@ P_BSS_DESC_T scanSearchBssDescByPolicy(IN P_ADAPTER_T prAdapter, IN UINT_8 ucBss
 			}
 
 			/* 4 <6E> Condition - Choose the one with better RCPI(RSSI). */
+#if AMZN_5GHZ_PREF
+			if (fgIsFindBestRSSI) {
+				INT_32 pAdjRssi = adptClntAdjust5gPref(prPrimaryBssDesc);
+				INT_32 cAdjRssi = adptClntAdjust5gPref(prCandidateBssDesc);
+				/* TODO(Kevin): We shouldn't compare the actual value, we should
+				 * allow some acceptable tolerance of some RSSI percentage here.
+				 */
+				DBGLOG(SCN, TRACE,
+				       "Candidate [" MACSTR "]: RCPI = %d, joinFailCnt=%d, Primary [" MACSTR
+					"]: RCPI = %d, joinFailCnt=%d\n", MAC2STR(prCandidateBssDesc->aucBSSID),
+					prCandidateBssDesc->ucRCPI, prCandidateBssDesc->ucJoinFailureCount,
+					MAC2STR(prPrimaryBssDesc->aucBSSID), prPrimaryBssDesc->ucRCPI,
+					prPrimaryBssDesc->ucJoinFailureCount);
+
+				ASSERT(!(prCandidateBssDesc->fgIsConnected && prPrimaryBssDesc->fgIsConnected));
+				if (prPrimaryBssDesc->ucJoinFailureCount > SCN_BSS_JOIN_FAIL_THRESOLD) {
+					/* give a chance to do join if join fail before
+					 * SCN_BSS_DECRASE_JOIN_FAIL_CNT_SEC seconds
+					*/
+					if (CHECK_FOR_TIMEOUT(rCurrentTime, prBssDesc->rJoinFailTime,
+							      SEC_TO_SYSTIME(SCN_BSS_JOIN_FAIL_CNT_RESET_SEC))) {
+						prBssDesc->ucJoinFailureCount -= SCN_BSS_JOIN_FAIL_RESET_STEP;
+						DBGLOG(AIS, INFO,
+						       "decrease join fail count for Bss " MACSTR
+							" to %u, timeout second %d\n", MAC2STR(prBssDesc->aucBSSID),
+							prBssDesc->ucJoinFailureCount,
+							SCN_BSS_JOIN_FAIL_CNT_RESET_SEC);
+					}
+				}
+				/* NOTE: To prevent SWING, we do roaming only if target AP
+				 * has at least 5dBm larger than us.
+				*/
+				if (prCandidateBssDesc->fgIsConnected) {
+					if ((cAdjRssi <= pAdjRssi)
+					    && prPrimaryBssDesc->ucJoinFailureCount <= SCN_BSS_JOIN_FAIL_THRESOLD) {
+
+						prCandidateBssDesc = prPrimaryBssDesc;
+						prCandidateStaRec = prPrimaryStaRec;
+						continue;
+					}
+				} else if (prPrimaryBssDesc->fgIsConnected) {
+					if ((cAdjRssi < pAdjRssi)
+					    || (prCandidateBssDesc->ucJoinFailureCount > SCN_BSS_JOIN_FAIL_THRESOLD)) {
+
+						prCandidateBssDesc = prPrimaryBssDesc;
+						prCandidateStaRec = prPrimaryStaRec;
+						continue;
+					}
+				} else if (prPrimaryBssDesc->ucJoinFailureCount > SCN_BSS_JOIN_FAIL_THRESOLD)
+					continue;
+				else if (prCandidateBssDesc->ucJoinFailureCount > SCN_BSS_JOIN_FAIL_THRESOLD ||
+					 (cAdjRssi < pAdjRssi)) {
+
+					prCandidateBssDesc = prPrimaryBssDesc;
+					prCandidateStaRec = prPrimaryStaRec;
+					continue;
+				}
+			}
+#else /* AMZN_5GHZ_PREF */
 			if (fgIsFindBestRSSI) {
 				/* TODO(Kevin): We shouldn't compare the actual value, we should
 				 * allow some acceptable tolerance of some RSSI percentage here.
@@ -2783,8 +3155,8 @@ P_BSS_DESC_T scanSearchBssDescByPolicy(IN P_ADAPTER_T prAdapter, IN UINT_8 ucBss
 				/* NOTE: To prevent SWING, we do roaming only if target AP
 				 * has at least 5dBm larger than us. */
 				if (prCandidateBssDesc->fgIsConnected) {
-					if ((prCandidateBssDesc->ucRCPI + ROAMING_NO_SWING_RCPI_STEP <=
-					     prPrimaryBssDesc->ucRCPI)
+					if (((prCandidateBssDesc->ucRCPI + ROAMING_NO_SWING_RCPI_STEP <=
+					     prPrimaryBssDesc->ucRCPI))
 					    && prPrimaryBssDesc->ucJoinFailureCount < SCN_BSS_JOIN_FAIL_THRESOLD) {
 
 						prCandidateBssDesc = prPrimaryBssDesc;
@@ -2810,6 +3182,7 @@ P_BSS_DESC_T scanSearchBssDescByPolicy(IN P_ADAPTER_T prAdapter, IN UINT_8 ucBss
 					continue;
 				}
 			}
+#endif /* end AMZN_5GHZ_PREF */
 #if 0
 			/* If reach here, that means they have the same Encryption Score, and
 			 * both RSSI value are close too.
@@ -2892,9 +3265,8 @@ VOID scanReportBss2Cfg80211(IN P_ADAPTER_T prAdapter, IN ENUM_BSS_TYPE_T eBSSTyp
 												 5]);
 				prChnLoad->u2APNum++;
 				prChnLoad->ucChannel = prBssDesc->ucChannelNum;
-			}
-			if (prChnLoad)
 				DBGLOG(SCN, TRACE, "chNum=%d,apNum=%d\n", prBssDesc->ucChannelNum, prChnLoad->u2APNum);
+			}
 #endif
 
 			/* check BSSID is legal channel */

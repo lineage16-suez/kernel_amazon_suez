@@ -6,10 +6,11 @@ ccflags-y += $(WLAN_CHIP_LIST)
 
 WLAN_CHIP_ID=MT6630
 
-ccflags-y += -DCFG_SUPPORT_DEBUG_FS=0
 ccflags-y += -DWLAN_INCLUDE_PROC
+ccflags-y += -DCFG_SUPPORT_DEBUG_FS=1
 ccflags-y += -DCFG_SUPPORT_AGPS_ASSIST=1
 ccflags-y += -DCFG_SUPPORT_TSF_USING_BOOTTIME=1
+ccflags-y += -DAMZN_5GHZ_PREF=1
 
 ccflags-y:=$(filter-out -U$(WLAN_CHIP_ID),$(ccflags-y))
 ccflags-y += -DLINUX -D$(WLAN_CHIP_ID)
@@ -24,13 +25,6 @@ ifeq ($(CONFIG_MTK_AEE_FEATURE), y)
     ccflags-y += -DCFG_SUPPORT_AEE=1
 else
     ccflags-y += -DCFG_SUPPORT_AEE=0
-endif
-
-# Disable ASSERT() for user load, enable for others
-ifneq ($(TARGET_BUILD_VARIANT),user)
-    ccflags-y += -DBUILD_QA_DBG=1
-else
-    ccflags-y += -DBUILD_QA_DBG=0
 endif
 
 #ifeq ($(CONFIG_MTK_COMBO_WIFI_HIF_SDIO1), y)
@@ -48,7 +42,7 @@ else ifeq ($(CONFIG_MTK_PASSPOINT_R2_SUPPORT), y)
 else
     ccflags-y += -DCFG_SUPPORT_PASSPOINT=0
     ccflags-y += -DCFG_HS20_DEBUG=0
-    ccflags-y += -DCFG_ENABLE_GTK_FRAME_FILTER=0
+    ccflags-y += -DCFG_ENABLE_GTK_FRAME_FILTER=1
 endif
 
 MTK_MET_PROFILING_SUPPORT = yes
@@ -58,11 +52,16 @@ else
     ccflags-y += -DCFG_MET_PACKET_TRACE_SUPPORT=0
 endif
 
+ifeq ($(CONFIG_MTK_NOISE_LEVEL_SUPPORT), y)
+    ccflags-y += -DCFG_ENABLE_RX_STATUS_G3
+endif
+
 ccflags-y += -D_HIF_SDIO=1
 
 ccflags-y += -DDBG=0
 ccflags-y += -I$(src)/os -I$(src)/os/linux/include -I$(src)/os/linux/hif/sdio/include
 ccflags-y += -I$(src)/include -I$(src)/include/nic -I$(src)/include/mgmt
+ccflags-$(CONFIG_ARCH_MT8173) += -I$(srctree)/drivers/misc/mediatek/base/power/mt8173 -DSPM_WAKEUP_EVENT_SUPPORT
 
 MODULE_NAME := wlan_gen3
 obj-$(CONFIG_MTK_COMBO_WIFI) += $(MODULE_NAME).o

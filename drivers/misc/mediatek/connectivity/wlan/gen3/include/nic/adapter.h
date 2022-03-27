@@ -1,4 +1,16 @@
 /*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+/*
 ** Id: //Department/DaVinci/BRANCHES/MT6620_WIFI_DRIVER_V2_3/include/nic/adapter.h#5
 */
 
@@ -756,7 +768,7 @@ Add per station flow control when STA is in PS
 *                    E X T E R N A L   R E F E R E N C E S
 ********************************************************************************
 */
-#if CFG_SUPPORT_PASSPOINT
+#if CFG_SUPPORT_PASSPOINT || CFG_ENABLE_GTK_FRAME_FILTER
 #include "hs20.h"
 #endif /* CFG_SUPPORT_PASSPOINT */
 
@@ -851,7 +863,8 @@ typedef struct _CONNECTION_SETTINGS_T {
 
 	ENUM_BAND_T eAdHocBand;	/* For AdHoc */
 
-	UINT_32 u4FreqInKHz;	/* Center frequency */
+	BOOLEAN fgSpecificChnl;
+	RF_CHANNEL_INFO_T rSpecificRfChnlInfo;
 
 	/* ATIM windows using for IBSS power saving function */
 	UINT_16 u2AtimWindow;
@@ -1019,6 +1032,7 @@ struct _BSS_INFO_T {
 	/* information element (CM)                                               */
     /*------------------------------------------------------------------------*/
 	ENUM_BAND_T eBand;
+	ENUM_BAND_T eOriBand;
 	UINT_8 ucPrimaryChannel;
 	UINT_8 ucHtOpInfo1;
 	UINT_16 u2HtOpInfo2;
@@ -1093,6 +1107,12 @@ struct _BSS_INFO_T {
 #if CFG_SUPPORT_PNO
 	BOOLEAN fgIsPNOEnable;
 	BOOLEAN fgIsNetRequestInActive;
+#endif
+
+#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
+	UINT_8	ucRoamSkipTimes;
+	BOOLEAN fgGoodRcpiArea;
+	BOOLEAN fgPoorRcpiArea;
 #endif
 
 	WIFI_WMM_AC_STAT_T arLinkStatistics[WMM_AC_INDEX_NUM];	/*link layer statistics */
@@ -1327,6 +1347,7 @@ typedef struct _WIFI_VAR_T {
 	UINT_8 ucStaHtBfee;
 	UINT_8 ucStaVhtBfee;
 	UINT_8 ucStaBfer;
+	UINT_8 ucStaVhtMuBfee;
 
 	UINT_8 ucApWpsMode;
 	UINT_8 ucApChannel;
@@ -1669,6 +1690,15 @@ struct _ADAPTER_T {
 	UINT_32 u4FlagBitmap;
 #endif
 
+#if	CFG_SUPPORT_WAKEUP_STATISTICS
+	WAKEUP_STATISTIC arWakeupStatistic[WAKEUP_TYPE_NUM];
+	int wake_event_count[EVENT_ID_END];
+#endif
+
+#if CFG_SUPPORT_WAKEUP_REASON_DEBUG
+	ULONG ulSuspendFlag;
+#endif
+	unsigned char dtim_skip_count;
 };				/* end of _ADAPTER_T */
 
 /*******************************************************************************
@@ -1743,6 +1773,9 @@ struct _ADAPTER_T {
 
 #define IS_SCN_PWR_STATE_IDLE(_prAdapter) \
 		(_prAdapter->rWifiVar.rScanInfo.eScanPwrState == SCAN_PWR_STATE_IDLE)
+
+#define SUSPEND_FLAG_FOR_WAKEUP_REASON	(0)
+#define SUSPEND_FLAG_FOR_APP_TRX_STAT		(1)
 
 /*******************************************************************************
 *                  F U N C T I O N   D E C L A R A T I O N S
