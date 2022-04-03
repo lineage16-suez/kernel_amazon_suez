@@ -20,7 +20,9 @@
 #include <linux/genalloc.h>
 #include <linux/io.h>
 #include <linux/mm.h>
+#ifdef CONFIG_MTK_M4U
 #include <m4u.h>
+#endif
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
@@ -81,7 +83,7 @@ static int ion_fb_heap_phys(struct ion_heap *heap, struct ion_buffer *buffer,
 	IONMSG("[ion_fb_heap_phys]: eModuleID = %d, len = 0x%x, pa = 0x%lx.\n",
 			pBufferInfo->eModuleID, (unsigned int) buffer->size,
 			pBufferInfo->priv_phys);
-
+#ifdef CONFIG_MTK_M4U
 	/*Allocate MVA*/
 	mutex_lock(&(pBufferInfo->lock));
 	if (pBufferInfo->MVA == 0) {
@@ -98,7 +100,7 @@ static int ion_fb_heap_phys(struct ion_heap *heap, struct ion_buffer *buffer,
 	*addr = (ion_phys_addr_t) pBufferInfo->MVA;
 	mutex_unlock(&(pBufferInfo->lock));
 	*len = buffer->size;
-
+#endif
 	IONMSG("[ion_fb_heap_phys]: MVA = 0x%x, len = 0x%x.\n", pBufferInfo->MVA, (unsigned int) buffer->size);
 
 	return 0;
