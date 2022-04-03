@@ -23,7 +23,9 @@
 #include "ion_priv.h"
 #include <linux/slab.h>
 #include <linux/xlog.h>
+#ifdef CONFIG_MTK_M4U
 #include <m4u.h>
+#endif
 #include <linux/mutex.h>
 #include <mmprofile.h>
 #include <linux/debugfs.h>

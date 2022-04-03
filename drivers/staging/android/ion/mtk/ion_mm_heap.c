@@ -31,8 +31,9 @@
 #include "ion_fb_heap.h"
 #include "ion_priv.h"
 #include "mtk/ion_drv.h"
+#ifdef CONFIG_MTK_M4U
 #include <m4u.h>
-
+#endif
 typedef struct {
 	struct mutex lock;
 	int eModuleID;
@@ -286,12 +287,13 @@ void ion_mm_heap_free_bufferInfo(struct ion_buffer *buffer)
 
 	if (pBufferInfo) {
 		mutex_lock(&(pBufferInfo->lock));
+#ifdef CONFIG_MTK_M4U
 		if ((pBufferInfo->destroy_fn) && (pBufferInfo->MVA))
 			pBufferInfo->destroy_fn(buffer, pBufferInfo->MVA);
 
 		if ((pBufferInfo->eModuleID != -1) && (pBufferInfo->MVA))
 			m4u_dealloc_mva_sg(pBufferInfo->eModuleID, table, buffer->size, pBufferInfo->MVA);
-
+#endif
 		mutex_unlock(&(pBufferInfo->lock));
 		kfree(pBufferInfo);
 	}
@@ -363,7 +365,7 @@ static int ion_mm_heap_phys(struct ion_heap *heap, struct ion_buffer *buffer,
 		return -EFAULT; /* Buffer not configured. */
 	}
 	/* Allocate MVA */
-
+#ifdef CONFIG_MTK_M4U
 	mutex_lock(&(pBufferInfo->lock));
 	if (pBufferInfo->MVA == 0) {
 		int ret = m4u_alloc_mva_sg(pBufferInfo->eModuleID, buffer->sg_table,
@@ -380,7 +382,7 @@ static int ion_mm_heap_phys(struct ion_heap *heap, struct ion_buffer *buffer,
 	*(unsigned int *) addr = pBufferInfo->MVA; /* MVA address */
 	mutex_unlock(&(pBufferInfo->lock));
 	*len = buffer->size;
-
+#endif
 	return 0;
 }
 
