@@ -1112,6 +1112,15 @@ static struct mt_cpu_dvfs cpu_dvfs[] = {	/* TODO: FIXME, big/LITTLE exclusive, N
 			     },
 };
 
+/*
+ * The HPS hotplug service destroys and recreates a cluster's cpufreq policy.
+ * Keep an explicit user ceiling outside that transient policy so an optional
+ * OPP selected by userspace remains selected when a cluster comes back.
+ * A zero user value means "use this device's stock e-fuse ceiling".
+ */
+static unsigned int suez_user_max_khz[NR_MT_CPU_DVFS];
+static unsigned int suez_stock_max_khz[NR_MT_CPU_DVFS];
+
 #define for_each_cpu_dvfs(i, p)                 for (i = 0, p = cpu_dvfs; i < NR_MT_CPU_DVFS; i++, p = &cpu_dvfs[i])
 #define cpu_dvfs_is(p, id)                      (p == &cpu_dvfs[id])
 #define cpu_dvfs_is_available(p)               (p->opp_tbl)
@@ -1194,6 +1203,37 @@ static struct mt_cpu_freq_info opp_tbl_little_e1_4[] = {
 	OP(DVFS_LITTLE_F7, DVFS_LITTLE_V7),
 	OP(DVFS_LITTLE_F8, DVFS_LITTLE_V8),
 	OP(DVFS_LITTLE_F9, DVFS_LITTLE_V9),
+};
+
+/*
+ * Suez normally exposes a 1.404 GHz LITTLE-cluster ceiling.  These are all
+ * existing MT8173 vendor frequency/voltage points; the expanded table leaves
+ * that ceiling as the default policy maximum while allowing a cpufreq client
+ * such as Kernel Auditor to opt in to the vendor 1.508, 1.807, or 1.924 GHz
+ * points.
+ */
+static struct mt_cpu_freq_info opp_tbl_little_suez_oc[] = {
+	OP(DVFS_LITTLE_SB_F00, DVFS_LITTLE_V0),
+	OP(DVFS_LITTLE_SB_F10, DVFS_LITTLE_V0),
+	OP(DVFS_LITTLE_F01, DVFS_LITTLE_V01),
+	OP(DVFS_LITTLE_F2, DVFS_LITTLE_V2),
+	OP(DVFS_LITTLE_F3, DVFS_LITTLE_V3),
+	OP(DVFS_LITTLE_F6, DVFS_LITTLE_V6),
+	OP(DVFS_LITTLE_F8, DVFS_LITTLE_V8),
+	OP(DVFS_LITTLE_F9, DVFS_LITTLE_V9),
+};
+
+/* Keep the A57 stock ceiling at 1.807 GHz, while exposing the existing
+ * vendor 1.911/1.989/2.106 GHz OPPs as optional cpufreq limits. */
+static struct mt_cpu_freq_info opp_tbl_big_suez_oc[] = {
+	OP(DVFS_BIG_SB_F10, DVFS_BIG_SB_V10),
+	OP(DVFS_BIG_F0, DVFS_BIG_V0),
+	OP(DVFS_BIG_F01, DVFS_BIG_V01),
+	OP(DVFS_BIG_F1, DVFS_BIG_V1),
+	OP(DVFS_BIG_F5, DVFS_BIG_V5),
+	OP(DVFS_BIG_F8, DVFS_BIG_V8),
+	OP(DVFS_BIG_F10, DVFS_BIG_V10),
+	OP(DVFS_BIG_F11, DVFS_BIG_V11),
 };
 
 		      /* big CPU LEVEL 0 *//* 2.1G, SB */
@@ -4423,10 +4463,22 @@ static int _mt_cpufreq_init(struct cpufreq_policy *policy)
 		enum mt_cpu_dvfs_id id = _get_cpu_dvfs_id(policy->cpu);
 		struct mt_cpu_dvfs *p = id_to_cpu_dvfs(id);
 		int lv = read_efuse_speed(id);	/* i.e. g_cpufreq_get_ptp_level */
-		struct opp_tbl_info *opp_tbl_info =
+		struct opp_tbl_info *stock_opp_tbl_info =
 		    (MT_CPU_DVFS_BIG ==
 		     id) ? &opp_tbls_big[CPU_LV_TO_OPP_IDX(lv)] :
 		    &opp_tbls_little[CPU_LV_TO_OPP_IDX(lv)];
+		struct opp_tbl_info suez_little_oc_tbl = {
+			opp_tbl_little_suez_oc, ARRAY_SIZE(opp_tbl_little_suez_oc)
+		};
+		struct opp_tbl_info suez_big_oc_tbl = {
+			opp_tbl_big_suez_oc, ARRAY_SIZE(opp_tbl_big_suez_oc)
+		};
+		struct opp_tbl_info *opp_tbl_info =
+			(MT_CPU_DVFS_LITTLE == id) ? &suez_little_oc_tbl :
+			&suez_big_oc_tbl;
+		unsigned int stock_max_khz = stock_opp_tbl_info->opp_tbl[0].cpufreq_khz;
+		int stock_max_idx;
+		int user_max_idx;
 
 		BUG_ON(NULL == p);
 		BUG_ON(!(lv == CPU_LEVEL_1 || lv == CPU_LEVEL_2
@@ -4439,11 +4491,29 @@ static int _mt_cpufreq_init(struct cpufreq_policy *policy)
 		policy->cpuinfo.min_freq = cpu_dvfs_get_min_freq(id_to_cpu_dvfs(id));
 
 		policy->cur = _mt_cpufreq_get_cur_phy_freq(id);	/* use cur phy freq is better */
-		policy->max = cpu_dvfs_get_max_freq(id_to_cpu_dvfs(id));
+		stock_max_idx =
+			_search_available_freq_idx(p, stock_max_khz, CPUFREQ_RELATION_H);
+		suez_stock_max_khz[id] = stock_max_khz;
+		user_max_idx = stock_max_idx;
+		if (suez_user_max_khz[id]) {
+			int idx = _search_available_freq_idx(p, suez_user_max_khz[id],
+						     CPUFREQ_RELATION_H);
+
+			if (idx >= 0 &&
+			    cpu_dvfs_get_freq_by_idx(p, idx) == suez_user_max_khz[id])
+				user_max_idx = idx;
+			else
+				suez_user_max_khz[id] = stock_max_khz;
+		} else {
+			suez_user_max_khz[id] = stock_max_khz;
+		}
+
+		/* cpuinfo exposes optional points; policy starts at the persisted ceiling. */
+		policy->max = cpu_dvfs_get_freq_by_idx(p, user_max_idx);
 		policy->min = cpu_dvfs_get_min_freq(id_to_cpu_dvfs(id));
 
 		if (_sync_opp_tbl_idx(p) >= 0)	/* sync p->idx_opp_tbl first before _restore_default_volt() */
-			p->idx_normal_max_opp = p->idx_opp_tbl;
+			p->idx_normal_max_opp = user_max_idx;
 
 		/* restore default volt, sync opp idx, set default limit */
 		/* _restore_default_volt(p); */
@@ -5782,6 +5852,74 @@ static ssize_t cpufreq_freq_proc_write(struct file *file, const char __user *buf
 	return count;
 }
 
+/* cpufreq_max_freq: persistent dynamic ceiling for a hotpluggable cluster */
+static int cpufreq_max_freq_proc_show(struct seq_file *m, void *v)
+{
+	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)m->private;
+	enum mt_cpu_dvfs_id id = cpu_dvfs_is(p, MT_CPU_DVFS_BIG) ?
+		MT_CPU_DVFS_BIG : MT_CPU_DVFS_LITTLE;
+
+	seq_printf(m, "%u\n", suez_user_max_khz[id] ?
+		   suez_user_max_khz[id] : suez_stock_max_khz[id]);
+
+	return 0;
+}
+
+static ssize_t cpufreq_max_freq_proc_write(struct file *file,
+					   const char __user *buffer, size_t count,
+					   loff_t *pos)
+{
+	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+	struct cpufreq_policy *policy;
+	enum mt_cpu_dvfs_id id;
+	unsigned long flags;
+	unsigned int freq;
+	int idx;
+	char *buf = _copy_from_user_for_proc(buffer, count);
+
+	if (!buf)
+		return -EINVAL;
+
+	BUG_ON(NULL == p);
+	id = cpu_dvfs_is(p, MT_CPU_DVFS_BIG) ?
+		MT_CPU_DVFS_BIG : MT_CPU_DVFS_LITTLE;
+
+	if (kstrtouint(buf, 10, &freq))
+		goto invalid;
+
+	if (freq == 0)
+		freq = suez_stock_max_khz[id];
+
+	idx = _search_available_freq_idx(p, freq, CPUFREQ_RELATION_H);
+	if (idx < 0 || cpu_dvfs_get_freq_by_idx(p, idx) != freq)
+		goto invalid;
+
+	cpufreq_lock(flags);
+	suez_user_max_khz[id] = freq;
+	p->idx_normal_max_opp = idx;
+	cpufreq_unlock(flags);
+
+	/* The policy may not exist while this cluster is hotplugged off. */
+	policy = cpufreq_cpu_get(p->cpu_id);
+	if (policy) {
+		policy->max = freq;
+		if (policy->min > policy->max)
+			policy->min = policy->max;
+		if (policy->cur > policy->max)
+			cpufreq_driver_target(policy, policy->max, CPUFREQ_RELATION_H);
+		cpufreq_cpu_put(policy);
+	}
+
+	free_page((unsigned long)buf);
+	return count;
+
+invalid:
+	cpufreq_err("echo exact OPP khz or 0 > /proc/cpufreq/%s/cpufreq_max_freq\n",
+		    p->name);
+	free_page((unsigned long)buf);
+	return -EINVAL;
+}
+
 /* cpufreq_volt */
 static int cpufreq_volt_proc_show(struct seq_file *m, void *v)
 {				/* <-XXX */
@@ -5917,6 +6055,7 @@ PROC_FOPS_RW(cpufreq_ptpod_temperature_limit);
 PROC_FOPS_RW(cpufreq_ptpod_temperature_time);
 PROC_FOPS_RW(cpufreq_oppidx);	/* <-XXX */
 PROC_FOPS_RW(cpufreq_freq);	/* <-XXX */
+PROC_FOPS_RW(cpufreq_max_freq);
 PROC_FOPS_RW(cpufreq_volt);	/* <-XXX */
 PROC_FOPS_RW(cpufreq_turbo_mode);	/* <-XXX */
 
@@ -5953,6 +6092,7 @@ static int _create_procfs(void)
 		PROC_ENTRY(cpufreq_ptpod_temperature_time),
 		PROC_ENTRY(cpufreq_oppidx),	/* <-XXX */
 		PROC_ENTRY(cpufreq_freq),	/* <-XXX */
+		PROC_ENTRY(cpufreq_max_freq),
 		PROC_ENTRY(cpufreq_volt),	/* <-XXX */
 		PROC_ENTRY(cpufreq_turbo_mode),	/* <-XXX */
 	};
