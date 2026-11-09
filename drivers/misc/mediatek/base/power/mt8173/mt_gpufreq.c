@@ -88,14 +88,14 @@ static gpufreq_mfgclock_notify g_pGpufreq_mfgclock_disable_notify;
 * GPU Frequency Table
 ****************************/
 /* 450MHz */
-static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_450[] = {
+static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_450[] __maybe_unused = {
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ5, GPU_DVFS_VOLT2, 1),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ6, GPU_DVFS_VOLT2, 2),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ7, GPU_DVFS_VOLT2, 3),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ8, GPU_DVFS_VOLT2, 4),
 };
 /* 500MHz */
-static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_500[] = {
+static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_500[] __maybe_unused = {
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ4, GPU_DVFS_VOLT1, 0),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ5, GPU_DVFS_VOLT2, 1),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ6, GPU_DVFS_VOLT2, 2),
@@ -103,7 +103,7 @@ static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_500[] = {
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ8, GPU_DVFS_VOLT2, 4),
 };
 /* 600MHz */
-static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_600[] = {
+static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_600[] __maybe_unused = {
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ3, GPU_DVFS_VOLT1, 0),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ5, GPU_DVFS_VOLT2, 1),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ6, GPU_DVFS_VOLT2, 2),
@@ -111,7 +111,7 @@ static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_600[] = {
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ8, GPU_DVFS_VOLT2, 4),
 };
 /* 650MHz */
-static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_650[] = {
+static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_650[] __maybe_unused = {
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ2, GPU_DVFS_VOLT1, 0),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ4, GPU_DVFS_VOLT1, 1),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ5, GPU_DVFS_VOLT2, 2),
@@ -144,6 +144,14 @@ static unsigned int g_gpufreq_max_id;
 /* If not limited, it should be set to freq_table[0] (MAX frequency) */
 static unsigned int g_limited_max_id;
 static unsigned int g_limited_min_id;
+
+/*
+ * Suez is speed-binned for the 445 MHz table.  The MT8173 driver already
+ * carries the 698 MHz vendor OPP table and the board's MT6397 VGPU regulator
+ * supports its 1.125 V request.  Keep the shipped 445 MHz ceiling unless a
+ * user explicitly requests an OPP through gpufreq_opp_freq.
+ */
+static unsigned int g_user_max_id = 2; /* 445 MHz in mt_gpufreq_opp_tbl_700 */
 
 static bool         mt_gpufreq_debug;
 static bool         mt_gpufreq_pause;
@@ -964,6 +972,15 @@ unsigned int mt_gpufreq_target(unsigned int idx)
 
 		pr_debug("PTPOD disable dvfs, mt_gpufreq_ptpod_disable_idx = %d\n",
 			mt_gpufreq_ptpod_disable_idx);
+	}
+
+	/* Keep the normal DVFS ceiling at the factory suez bin.  This is separate
+	 * from thermal/battery limits and is deliberately applied after every
+	 * transient override above. */
+	if (g_user_max_id != 0 && target_freq > mt_gpufreqs[g_user_max_id].gpufreq_khz) {
+		target_freq = mt_gpufreqs[g_user_max_id].gpufreq_khz;
+		target_volt = mt_gpufreqs[g_user_max_id].gpufreq_volt;
+		target_idx = g_user_max_id;
 	}
 
     /************************************************
@@ -1791,8 +1808,10 @@ static ssize_t mt_gpufreq_opp_freq_write(struct file *file,
 	desc[len] = '\0';
 
 	if (!kstrtoint(desc, 10, &fixed_freq)) {
-		if (fixed_freq == 0)
+		if (fixed_freq == 0) {
 			mt_gpufreq_keep_opp_frequency_state = false;
+			g_user_max_id = 2; /* Restore the factory 445 MHz ceiling. */
+		}
 		else {
 			for (i = 0; i < mt_gpufreqs_num; i++) {
 				if (fixed_freq == mt_gpufreqs[i].gpufreq_khz) {
@@ -1803,6 +1822,8 @@ static ssize_t mt_gpufreq_opp_freq_write(struct file *file,
 			}
 
 			if (found == 1)	{
+				/* The existing proc interface is the explicit OC opt-in. */
+				g_user_max_id = i;
 				mt_gpufreq_keep_opp_frequency_state = true;
 				mt_gpufreq_keep_opp_frequency = fixed_freq;
 
@@ -1811,6 +1832,53 @@ static ssize_t mt_gpufreq_opp_freq_write(struct file *file,
 		}
 	} else
 		pr_err("bad argument!! should be [enable fixed_freq fixed_volt]\n");
+
+	return count;
+}
+
+/*
+ * Dynamic user ceiling.  Unlike gpufreq_opp_freq, this never pins an OPP:
+ * the normal MTK DVFS governor can use every point at or below the selected
+ * maximum.  Input is an exact table value in kHz, or 0 for stock 445 MHz.
+ */
+static int mt_gpufreq_max_freq_read(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%u\n", mt_gpufreqs[g_user_max_id].gpufreq_khz);
+	return 0;
+}
+
+static ssize_t mt_gpufreq_max_freq_write(struct file *file,
+		const char __user *buffer, size_t count, loff_t *data)
+{
+	char desc[32];
+	int len;
+	int max_freq;
+	int i;
+
+	len = (count < (sizeof(desc) - 1)) ? count : (sizeof(desc) - 1);
+	if (copy_from_user(desc, buffer, len))
+		return -EFAULT;
+	desc[len] = '\0';
+
+	if (kstrtoint(desc, 10, &max_freq))
+		return -EINVAL;
+
+	if (max_freq == 0) {
+		g_user_max_id = 2;
+	} else {
+		for (i = 0; i < mt_gpufreqs_num; i++) {
+			if (max_freq == mt_gpufreqs[i].gpufreq_khz) {
+				g_user_max_id = i;
+				break;
+			}
+		}
+		if (i == mt_gpufreqs_num)
+			return -EINVAL;
+	}
+
+	/* A lowered cap must take effect immediately; raising it stays dynamic. */
+	if (g_cur_gpu_freq > mt_gpufreqs[g_user_max_id].gpufreq_khz)
+		mt_gpufreq_target(g_user_max_id);
 
 	return count;
 }
@@ -2007,19 +2075,10 @@ static int mt_gpufreq_pdrv_probe(struct platform_device *pdev)
 
 	mt_gpufreq_dvfs_table_type = mt_gpufreq_check_dvfs_efuse();
 
-    /* setup gpufreq table */
-	if (mt_gpufreq_dvfs_table_type == GPUFREQ_TYPE_700)
-		mt_setup_gpufreqs_table(mt_gpufreq_opp_tbl_700, ARRAY_SIZE(mt_gpufreq_opp_tbl_700));
-	else if (mt_gpufreq_dvfs_table_type == GPUFREQ_TYPE_650)
-		mt_setup_gpufreqs_table(mt_gpufreq_opp_tbl_650, ARRAY_SIZE(mt_gpufreq_opp_tbl_650));
-	else if (mt_gpufreq_dvfs_table_type == GPUFREQ_TYPE_600)
-		mt_setup_gpufreqs_table(mt_gpufreq_opp_tbl_600, ARRAY_SIZE(mt_gpufreq_opp_tbl_600));
-	else if (mt_gpufreq_dvfs_table_type == GPUFREQ_TYPE_500)
-		mt_setup_gpufreqs_table(mt_gpufreq_opp_tbl_500, ARRAY_SIZE(mt_gpufreq_opp_tbl_500));
-	else if (mt_gpufreq_dvfs_table_type == GPUFREQ_TYPE_450)
-		mt_setup_gpufreqs_table(mt_gpufreq_opp_tbl_450, ARRAY_SIZE(mt_gpufreq_opp_tbl_450));
-	else
-		mt_setup_gpufreqs_table(mt_gpufreq_opp_tbl_500, ARRAY_SIZE(mt_gpufreq_opp_tbl_500));
+	/* Expose the vendor 698 MHz OPPs, but preserve the 445 MHz factory cap
+	 * through g_user_max_id until userspace deliberately selects one. */
+	mt_setup_gpufreqs_table(mt_gpufreq_opp_tbl_700,
+				 ARRAY_SIZE(mt_gpufreq_opp_tbl_700));
 
 	mt_gpufreq_volt_enable_state = 1;
 
@@ -2302,6 +2361,20 @@ static const struct file_operations mt_gpufreq_opp_freq_fops = {
 	.release = single_release,
 };
 
+static int mt_gpufreq_max_freq_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, mt_gpufreq_max_freq_read, NULL);
+}
+
+static const struct file_operations mt_gpufreq_max_freq_fops = {
+	.owner = THIS_MODULE,
+	.open = mt_gpufreq_max_freq_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.write = mt_gpufreq_max_freq_write,
+	.release = single_release,
+};
+
 
 static int mt_gpufreq_var_dump_open(struct inode *inode, struct file *file)
 {
@@ -2423,6 +2496,12 @@ static int __init mt_gpufreq_init(void)
 	    &mt_gpufreq_opp_freq_fops);
 	if (!mt_entry)
 		pr_err("create /proc/gpufreq/gpufreq_opp_freq failed\n");
+
+	mt_entry =
+	proc_create("gpufreq_max_freq", S_IRUGO | S_IWUSR | S_IWGRP, mt_gpufreq_dir,
+		&mt_gpufreq_max_freq_fops);
+	if (!mt_entry)
+		pr_err("create /proc/gpufreq/gpufreq_max_freq failed\n");
 
 	mt_entry =
 	proc_create("gpufreq_var_dump", S_IRUGO | S_IWUSR | S_IWGRP, mt_gpufreq_dir,
