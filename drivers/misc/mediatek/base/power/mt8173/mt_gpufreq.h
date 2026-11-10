@@ -49,7 +49,7 @@ typedef enum GPUFREQ_DVFS_TABLE_TYPE
 #define GPU_DVFS_MAX_FREQ               (700000) /* KHz */
 #define GPU_DVFS_MIN_FREQ               (GPU_DVFS_FREQ8)
 
-#define GPU_DVFS_VOLT1                  (1125)   /* mV */
+#define GPU_DVFS_VOLT1                  (1130)   /* mV */
 #define GPU_DVFS_VOLT2                  (1000)   /* mV */
 
 /* us, (DA9212 externel buck) I2C command delay 100us, Buck 10mv/us */
