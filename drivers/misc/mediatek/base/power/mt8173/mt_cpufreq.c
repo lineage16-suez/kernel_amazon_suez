@@ -1150,6 +1150,53 @@ static struct mt_cpu_dvfs *id_to_cpu_dvfs(enum mt_cpu_dvfs_id id)
 static unsigned int suez_user_opp_mv[NR_MT_CPU_DVFS][NR_MAX_OPP_TBL];
 static unsigned int suez_stock_opp_mv[NR_MT_CPU_DVFS][NR_MAX_OPP_TBL];
 
+/* Generic cpufreq stats belongs to a policy. MTK HPS deletes that policy
+ * while the BIG cluster is parked, so retain a cluster-owned counter. */
+struct suez_cluster_time_in_state {
+	u64 ticks[NR_MAX_OPP_TBL];
+	u64 last_update;
+	bool active;
+};
+
+static struct suez_cluster_time_in_state suez_time_in_state[NR_MT_CPU_DVFS];
+static DEFINE_SPINLOCK(suez_time_in_state_lock);
+
+static void suez_time_in_state_set_active(enum mt_cpu_dvfs_id id,
+					  int opp_idx, bool active)
+{
+	unsigned long flags;
+	struct suez_cluster_time_in_state *state;
+	u64 now = get_jiffies_64();
+
+	if (id >= NR_MT_CPU_DVFS || opp_idx < 0 || opp_idx >= NR_MAX_OPP_TBL)
+		return;
+
+	state = &suez_time_in_state[id];
+	spin_lock_irqsave(&suez_time_in_state_lock, flags);
+	if (state->active && state->last_update)
+		state->ticks[opp_idx] += now - state->last_update;
+	state->active = active;
+	state->last_update = now;
+	spin_unlock_irqrestore(&suez_time_in_state_lock, flags);
+}
+
+static void suez_time_in_state_transition(enum mt_cpu_dvfs_id id, int old_opp_idx)
+{
+	unsigned long flags;
+	struct suez_cluster_time_in_state *state;
+	u64 now = get_jiffies_64();
+
+	if (id >= NR_MT_CPU_DVFS || old_opp_idx < 0 || old_opp_idx >= NR_MAX_OPP_TBL)
+		return;
+
+	state = &suez_time_in_state[id];
+	spin_lock_irqsave(&suez_time_in_state_lock, flags);
+	if (state->active && state->last_update)
+		state->ticks[old_opp_idx] += now - state->last_update;
+	state->last_update = now;
+	spin_unlock_irqrestore(&suez_time_in_state_lock, flags);
+}
+
 			 /* LITTLE CPU LEVEL 0 *//* 1.8G, SB */
 static struct mt_cpu_freq_info opp_tbl_little_e1_0[] = {
 	OP(DVFS_LITTLE_SB_F10, DVFS_LITTLE_SB_V10),
@@ -2421,6 +2468,9 @@ static void _mt_cpufreq_set(enum mt_cpu_dvfs_id id, int new_opp_idx)
 	cur_freq = p->ops->get_cur_phy_freq(p);
 	target_freq = cpu_dvfs_get_freq_by_idx(p, new_opp_idx);
 
+	/* Account the previous OPP before changing the hardware clock. */
+	suez_time_in_state_transition(id, p->idx_opp_tbl);
+
 #if 0				/* not in mt8173 */
 	/* enable FBB for CA15L before entering into first OPP */
 	if (id == MT_CPU_DVFS_BIG && num_online_big_cpus() > 0 && 0 != p->idx_opp_tbl
@@ -2654,6 +2704,46 @@ static int __cpuinit extbuck_cpu_callback(struct notifier_block *nfb,
 
 static struct notifier_block __refdata extbuck_cpu_notifier = {
 	.notifier_call = extbuck_cpu_callback,
+};
+
+/* Match BIG-cluster residency to the HPS lifetime of its rail/policy. */
+static int __cpuinit suez_time_in_state_cpu_callback(struct notifier_block *nfb,
+						     unsigned long action, void *hcpu)
+{
+	unsigned int cpu = (unsigned long)hcpu;
+	struct mt_cpu_dvfs *p;
+	int num_online_little, num_online_big;
+
+	if (!hps_cpu_is_cpu_big(cpu))
+		return NOTIFY_OK;
+	if (hps_get_num_online_cpus(&num_online_little, &num_online_big) == -1)
+		return NOTIFY_OK;
+
+	p = id_to_cpu_dvfs(MT_CPU_DVFS_BIG);
+	if (!p)
+		return NOTIFY_OK;
+
+	switch (action & 0xF) {
+	case CPU_UP_PREPARE:
+		/* HPS has not counted the new BIG CPU at this point. */
+		if (num_online_big == 0)
+			suez_time_in_state_set_active(MT_CPU_DVFS_BIG,
+						      p->idx_opp_tbl, true);
+		break;
+	case CPU_DEAD:
+	case CPU_UP_CANCELED:
+		/* HPS now reports the post-transition online count. */
+		if (num_online_big == 0)
+			suez_time_in_state_set_active(MT_CPU_DVFS_BIG,
+						      p->idx_opp_tbl, false);
+		break;
+	}
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block __refdata suez_time_in_state_cpu_notifier = {
+	.notifier_call = suez_time_in_state_cpu_callback,
 };
 
 
@@ -4517,6 +4607,7 @@ static int _mt_cpufreq_init(struct cpufreq_policy *policy)
 			p->opp_tbl[i].cpufreq_volt = suez_user_opp_mv[id][i] ?
 				suez_user_opp_mv[id][i] : suez_stock_opp_mv[id][i];
 		}
+		suez_time_in_state_set_active(id, p->idx_opp_tbl, true);
 
 		policy->cpuinfo.max_freq = cpu_dvfs_get_max_freq(id_to_cpu_dvfs(id));
 		policy->cpuinfo.min_freq = cpu_dvfs_get_min_freq(id_to_cpu_dvfs(id));
@@ -4967,6 +5058,7 @@ static int _mt_cpufreq_pdrv_probe(struct platform_device *pdev)
 	ret = cpufreq_register_driver(&_mt_cpufreq_driver);
 	register_hotcpu_notifier(&turbo_mode_cpu_notifier);	/* <-XXX */
 	register_hotcpu_notifier(&extbuck_cpu_notifier);
+	register_hotcpu_notifier(&suez_time_in_state_cpu_notifier);
 
 	_mt_cpufreq_pdrv_probed = 1;
 
@@ -4980,6 +5072,7 @@ static int _mt_cpufreq_pdrv_remove(struct platform_device *pdev)
 	FUNC_ENTER(FUNC_LV_MODULE);
 
 	unregister_hotcpu_notifier(&extbuck_cpu_notifier);
+	unregister_hotcpu_notifier(&suez_time_in_state_cpu_notifier);
 	unregister_hotcpu_notifier(&turbo_mode_cpu_notifier);	/* <-XXX */
 	cpufreq_unregister_driver(&_mt_cpufreq_driver);
 
@@ -5951,6 +6044,39 @@ invalid:
 	return -EINVAL;
 }
 
+/* Persistent per-cluster equivalent of cpufreq stats/time_in_state. */
+static int cpufreq_time_in_state_proc_show(struct seq_file *m, void *v)
+{
+	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)m->private;
+	enum mt_cpu_dvfs_id id = cpu_dvfs_is(p, MT_CPU_DVFS_BIG) ?
+		MT_CPU_DVFS_BIG : MT_CPU_DVFS_LITTLE;
+	struct suez_cluster_time_in_state *state = &suez_time_in_state[id];
+	unsigned long flags;
+	u64 ticks[NR_MAX_OPP_TBL];
+	u64 now = get_jiffies_64();
+	u64 pending = 0;
+	int active_idx = -1;
+	int i;
+
+	spin_lock_irqsave(&suez_time_in_state_lock, flags);
+	memcpy(ticks, state->ticks, sizeof(ticks));
+	if (state->active && state->last_update) {
+		active_idx = p->idx_opp_tbl;
+		pending = now - state->last_update;
+	}
+	spin_unlock_irqrestore(&suez_time_in_state_lock, flags);
+
+	for (i = 0; i < p->nr_opp_tbl; i++) {
+		u64 value = ticks[i];
+		if (i == active_idx)
+			value += pending;
+		seq_printf(m, "%u %llu\n", p->opp_tbl[i].cpufreq_khz,
+			   (unsigned long long)jiffies_64_to_clock_t(value));
+	}
+
+	return 0;
+}
+
 /* Per-OPP voltage tuning for Suez. The values are target millivolts; the
  * regulator driver selects the nearest hardware step and the live readback
  * below reports what the DVFS driver sees after the transition. 1.137 V is
@@ -6172,6 +6298,7 @@ PROC_FOPS_RW(cpufreq_ptpod_temperature_time);
 PROC_FOPS_RW(cpufreq_oppidx);	/* <-XXX */
 PROC_FOPS_RW(cpufreq_freq);	/* <-XXX */
 PROC_FOPS_RW(cpufreq_max_freq);
+PROC_FOPS_RO(cpufreq_time_in_state);
 PROC_FOPS_RW(cpufreq_opp_voltage);
 PROC_FOPS_RW(cpufreq_volt);	/* <-XXX */
 PROC_FOPS_RW(cpufreq_turbo_mode);	/* <-XXX */
@@ -6210,6 +6337,7 @@ static int _create_procfs(void)
 		PROC_ENTRY(cpufreq_oppidx),	/* <-XXX */
 		PROC_ENTRY(cpufreq_freq),	/* <-XXX */
 		PROC_ENTRY(cpufreq_max_freq),
+		PROC_ENTRY(cpufreq_time_in_state),
 		PROC_ENTRY(cpufreq_opp_voltage),
 		PROC_ENTRY(cpufreq_volt),	/* <-XXX */
 		PROC_ENTRY(cpufreq_turbo_mode),	/* <-XXX */
