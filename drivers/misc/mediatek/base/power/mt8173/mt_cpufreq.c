@@ -1570,6 +1570,7 @@ int mt_cpufreq_voltage_set_by_ptpod(enum mt_cpu_dvfs_id id, unsigned int *volt_t
 {				/* TODO: rename to mt_cpufreq_update_volt() */
 	struct mt_cpu_dvfs *p = id_to_cpu_dvfs(id);
 	unsigned long flags;
+	unsigned int calibrated_mv;
 	int i;
 	int ret = -1;
 
@@ -1593,9 +1594,17 @@ int mt_cpufreq_voltage_set_by_ptpod(enum mt_cpu_dvfs_id id, unsigned int *volt_t
 
 	cpufreq_lock(flags);
 
-	/* update volt table */
-	for (i = 0; i < nr_volt_tbl; i++)
-		p->opp_tbl[i].cpufreq_volt = PMIC_VAL_TO_VOLT(volt_tbl[i]);
+	/*
+	 * PTP supplies the calibrated factory voltage table asynchronously.  Keep
+	 * it as the reset-to-stock baseline, but do not let a later calibration
+	 * notification discard an explicit per-OPP user selection.
+	 */
+	for (i = 0; i < nr_volt_tbl; i++) {
+		calibrated_mv = PMIC_VAL_TO_VOLT(volt_tbl[i]);
+		suez_stock_opp_mv[id][i] = calibrated_mv;
+		if (!suez_user_opp_mv[id][i])
+			p->opp_tbl[i].cpufreq_volt = calibrated_mv;
+	}
 
 	/* set volt */
 	ret = _set_cur_volt_locked(p,
