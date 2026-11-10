@@ -1145,6 +1145,11 @@ static struct mt_cpu_dvfs *id_to_cpu_dvfs(enum mt_cpu_dvfs_id id)
 #define NR_MAX_OPP_TBL  8	/* TODO: refere to PTP-OD */
 #define NR_MAX_CPU      4	/* TODO: one cluster, any kernel define for this - CONFIG_NR_CPU??? */
 
+/* Per-OPP overrides are persisted across HPS policy recreation. A zero
+ * entry means the vendor OPP voltage remains in effect. */
+static unsigned int suez_user_opp_mv[NR_MT_CPU_DVFS][NR_MAX_OPP_TBL];
+static unsigned int suez_stock_opp_mv[NR_MT_CPU_DVFS][NR_MAX_OPP_TBL];
+
 			 /* LITTLE CPU LEVEL 0 *//* 1.8G, SB */
 static struct mt_cpu_freq_info opp_tbl_little_e1_0[] = {
 	OP(DVFS_LITTLE_SB_F10, DVFS_LITTLE_SB_V10),
@@ -1215,6 +1220,7 @@ static struct mt_cpu_freq_info opp_tbl_little_e1_4[] = {
 static struct mt_cpu_freq_info opp_tbl_little_suez_oc[] = {
 	OP(DVFS_LITTLE_SB_F00, DVFS_LITTLE_V0),
 	OP(DVFS_LITTLE_SB_F10, DVFS_LITTLE_V0),
+	/* Retain the vendor voltage step before the top speed-bin OPPs. */
 	OP(DVFS_LITTLE_F01, DVFS_LITTLE_V01),
 	OP(DVFS_LITTLE_F2, DVFS_LITTLE_V2),
 	OP(DVFS_LITTLE_F3, DVFS_LITTLE_V3),
@@ -1450,6 +1456,7 @@ static int _set_cur_volt_locked(struct mt_cpu_dvfs *p, unsigned int mv)
 static int _restore_default_volt(struct mt_cpu_dvfs *p)
 {
 	unsigned long flags;
+	enum mt_cpu_dvfs_id id;
 	int i;
 	int ret = -1;
 
@@ -1464,9 +1471,20 @@ static int _restore_default_volt(struct mt_cpu_dvfs *p)
 
 	cpufreq_lock(flags);	/* TODO: is it necessary??? */
 
-	/* restore to default volt */
-	for (i = 0; i < p->nr_opp_tbl; i++)
-		p->opp_tbl[i].cpufreq_volt = p->opp_tbl[i].cpufreq_volt_org;
+	/*
+	 * A few MTK paths call this while recreating or revalidating a policy.
+	 * Those paths must restore vendor defaults only for untouched OPPs: a
+	 * user-selected per-OPP voltage is a policy property, not a transient
+	 * runtime value, and changing a frequency limit must not discard it.
+	 */
+	id = cpu_dvfs_is(p, MT_CPU_DVFS_BIG) ?
+		MT_CPU_DVFS_BIG : MT_CPU_DVFS_LITTLE;
+	for (i = 0; i < p->nr_opp_tbl; i++) {
+		if (!suez_stock_opp_mv[id][i])
+			suez_stock_opp_mv[id][i] = p->opp_tbl[i].cpufreq_volt_org;
+		p->opp_tbl[i].cpufreq_volt = suez_user_opp_mv[id][i] ?
+			suez_user_opp_mv[id][i] : suez_stock_opp_mv[id][i];
+	}
 
 	/* set volt */
 	ret = _set_cur_volt_locked(p,
@@ -4479,6 +4497,7 @@ static int _mt_cpufreq_init(struct cpufreq_policy *policy)
 		unsigned int stock_max_khz = stock_opp_tbl_info->opp_tbl[0].cpufreq_khz;
 		int stock_max_idx;
 		int user_max_idx;
+		int i;
 
 		BUG_ON(NULL == p);
 		BUG_ON(!(lv == CPU_LEVEL_1 || lv == CPU_LEVEL_2
@@ -4486,6 +4505,18 @@ static int _mt_cpufreq_init(struct cpufreq_policy *policy)
 
 		ret = _mt_cpufreq_setup_freqs_table(policy,
 						    opp_tbl_info->opp_tbl, opp_tbl_info->size);
+		if (ret)
+			return ret;
+
+		/* Restore stock or user-selected voltages after HPS recreates a
+		 * cpufreq policy. The custom OPP arrays themselves are static, but
+		 * keeping the defaults separately makes reset-to-stock deterministic. */
+		for (i = 0; i < p->nr_opp_tbl; i++) {
+			if (!suez_stock_opp_mv[id][i])
+				suez_stock_opp_mv[id][i] = p->opp_tbl[i].cpufreq_volt;
+			p->opp_tbl[i].cpufreq_volt = suez_user_opp_mv[id][i] ?
+				suez_user_opp_mv[id][i] : suez_stock_opp_mv[id][i];
+		}
 
 		policy->cpuinfo.max_freq = cpu_dvfs_get_max_freq(id_to_cpu_dvfs(id));
 		policy->cpuinfo.min_freq = cpu_dvfs_get_min_freq(id_to_cpu_dvfs(id));
@@ -5920,6 +5951,91 @@ invalid:
 	return -EINVAL;
 }
 
+/* Per-OPP voltage tuning for Suez. The values are target millivolts; the
+ * regulator driver selects the nearest hardware step and the live readback
+ * below reports what the DVFS driver sees after the transition. 1.137 V is
+ * the explicit VPROC tuning ceiling, below the 1.150 V rail limit. */
+static unsigned int suez_opp_voltage_limit(struct mt_cpu_dvfs *p)
+{
+	return 1137;
+}
+
+static int cpufreq_opp_voltage_proc_show(struct seq_file *m, void *v)
+{
+	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)m->private;
+	enum mt_cpu_dvfs_id id = cpu_dvfs_is(p, MT_CPU_DVFS_BIG) ?
+		MT_CPU_DVFS_BIG : MT_CPU_DVFS_LITTLE;
+	unsigned int live_vproc_mv = p->ops->get_cur_volt(p);
+	unsigned int live_vsram_mv = 0;
+	int i;
+
+	if (cpu_dvfs_is(p, MT_CPU_DVFS_BIG))
+		live_vsram_mv = get_cur_vsram_big(p);
+
+	/* These are regulator readbacks, not requested OPP table values. */
+	seq_printf(m, "# live_vproc_mv=%u live_vsram_mv=%u max_mv=%u\n",
+		   live_vproc_mv, live_vsram_mv, suez_opp_voltage_limit(p));
+	seq_puts(m, "# freq_khz assigned_mv stock_mv\n");
+	for (i = 0; i < p->nr_opp_tbl; i++)
+		seq_printf(m, "%u %u %u\n", p->opp_tbl[i].cpufreq_khz,
+			   p->opp_tbl[i].cpufreq_volt, suez_stock_opp_mv[id][i]);
+
+	return 0;
+}
+
+static ssize_t cpufreq_opp_voltage_proc_write(struct file *file,
+		const char __user *buffer, size_t count, loff_t *pos)
+{
+	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+	enum mt_cpu_dvfs_id id = cpu_dvfs_is(p, MT_CPU_DVFS_BIG) ?
+		MT_CPU_DVFS_BIG : MT_CPU_DVFS_LITTLE;
+	unsigned long flags;
+	unsigned int freq, mv, old_mv;
+	int i, ret = 0;
+	char *buf = _copy_from_user_for_proc(buffer, count);
+
+	if (!buf)
+		return -EINVAL;
+
+	if (sscanf(buf, "%u %u", &freq, &mv) != 2)
+		goto invalid;
+
+	for (i = 0; i < p->nr_opp_tbl; i++)
+		if (p->opp_tbl[i].cpufreq_khz == freq)
+			break;
+	if (i == p->nr_opp_tbl)
+		goto invalid;
+
+	if (mv == 0)
+		mv = suez_stock_opp_mv[id][i];
+	if (mv < 800 || mv > suez_opp_voltage_limit(p))
+		goto invalid;
+
+	cpufreq_lock(flags);
+	old_mv = p->opp_tbl[i].cpufreq_volt;
+	p->opp_tbl[i].cpufreq_volt = mv;
+	if (p->idx_opp_tbl == i) {
+		ret = _set_cur_volt_locked(p, mv);
+		if (ret)
+			p->opp_tbl[i].cpufreq_volt = old_mv;
+	}
+	if (!ret)
+		suez_user_opp_mv[id][i] =
+			mv == suez_stock_opp_mv[id][i] ? 0 : mv;
+	cpufreq_unlock(flags);
+
+	if (ret)
+		goto invalid;
+	free_page((unsigned long)buf);
+	return count;
+
+invalid:
+	cpufreq_err("echo <exact_opp_khz> <800..%u mV, or 0 to reset> > /proc/cpufreq/%s/cpufreq_opp_voltage\n",
+		    suez_opp_voltage_limit(p), p->name);
+	free_page((unsigned long)buf);
+	return -EINVAL;
+}
+
 /* cpufreq_volt */
 static int cpufreq_volt_proc_show(struct seq_file *m, void *v)
 {				/* <-XXX */
@@ -6056,6 +6172,7 @@ PROC_FOPS_RW(cpufreq_ptpod_temperature_time);
 PROC_FOPS_RW(cpufreq_oppidx);	/* <-XXX */
 PROC_FOPS_RW(cpufreq_freq);	/* <-XXX */
 PROC_FOPS_RW(cpufreq_max_freq);
+PROC_FOPS_RW(cpufreq_opp_voltage);
 PROC_FOPS_RW(cpufreq_volt);	/* <-XXX */
 PROC_FOPS_RW(cpufreq_turbo_mode);	/* <-XXX */
 
@@ -6093,6 +6210,7 @@ static int _create_procfs(void)
 		PROC_ENTRY(cpufreq_oppidx),	/* <-XXX */
 		PROC_ENTRY(cpufreq_freq),	/* <-XXX */
 		PROC_ENTRY(cpufreq_max_freq),
+		PROC_ENTRY(cpufreq_opp_voltage),
 		PROC_ENTRY(cpufreq_volt),	/* <-XXX */
 		PROC_ENTRY(cpufreq_turbo_mode),	/* <-XXX */
 	};
