@@ -88,14 +88,14 @@ static gpufreq_mfgclock_notify g_pGpufreq_mfgclock_disable_notify;
 * GPU Frequency Table
 ****************************/
 /* 450MHz */
-static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_450[] = {
+static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_450[] __maybe_unused = {
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ5, GPU_DVFS_VOLT2, 1),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ6, GPU_DVFS_VOLT2, 2),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ7, GPU_DVFS_VOLT2, 3),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ8, GPU_DVFS_VOLT2, 4),
 };
 /* 500MHz */
-static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_500[] = {
+static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_500[] __maybe_unused = {
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ4, GPU_DVFS_VOLT1, 0),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ5, GPU_DVFS_VOLT2, 1),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ6, GPU_DVFS_VOLT2, 2),
@@ -103,7 +103,7 @@ static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_500[] = {
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ8, GPU_DVFS_VOLT2, 4),
 };
 /* 600MHz */
-static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_600[] = {
+static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_600[] __maybe_unused = {
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ3, GPU_DVFS_VOLT1, 0),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ5, GPU_DVFS_VOLT2, 1),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ6, GPU_DVFS_VOLT2, 2),
@@ -111,7 +111,7 @@ static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_600[] = {
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ8, GPU_DVFS_VOLT2, 4),
 };
 /* 650MHz */
-static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_650[] = {
+static struct mt_gpufreq_table_info mt_gpufreq_opp_tbl_650[] __maybe_unused = {
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ2, GPU_DVFS_VOLT1, 0),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ4, GPU_DVFS_VOLT1, 1),
 	GPUOP_FREQ_TBL(GPU_DVFS_FREQ5, GPU_DVFS_VOLT2, 2),
@@ -144,6 +144,14 @@ static unsigned int g_gpufreq_max_id;
 /* If not limited, it should be set to freq_table[0] (MAX frequency) */
 static unsigned int g_limited_max_id;
 static unsigned int g_limited_min_id;
+
+/*
+ * Suez is speed-binned for the 445 MHz table.  The MT8173 driver already
+ * carries the 698 MHz vendor OPP table and the board's MT6397 VGPU regulator
+ * supports its 1.125 V request.  Keep the shipped 445 MHz ceiling unless a
+ * user explicitly requests an OPP through gpufreq_opp_freq.
+ */
+static unsigned int g_user_max_id = 2; /* 445 MHz in mt_gpufreq_opp_tbl_700 */
 
 static bool         mt_gpufreq_debug;
 static bool         mt_gpufreq_pause;
@@ -186,11 +194,24 @@ static struct mt_gpufreq_table_info *mt_gpufreqs;
 static struct mt_gpufreq_table_info *mt_gpufreqs_default;
 static struct mt_gpufreq_power_table_info *mt_gpufreqs_power;
 
+/*
+ * Keep a user-selected voltage separate from MediaTek PTP's calibration
+ * table.  PTP may refresh its per-silicon values after Android has booted;
+ * without this layer that refresh silently discarded userspace tuning.
+ * MT8173 has no more than five GPU OPPs, but leave room for future vendor
+ * table variants.
+ */
+#define SUEZ_GPU_MAX_OPPS		8
+#define SUEZ_GPU_MIN_VOLT_MV		700
+#define SUEZ_GPU_MAX_VOLT_MV		1350
+static unsigned int suez_gpu_user_opp_mv[SUEZ_GPU_MAX_OPPS];
+static unsigned int suez_gpu_stock_opp_mv[SUEZ_GPU_MAX_OPPS];
+
 static bool mt_gpufreq_ptpod_disable;
 static int  mt_gpufreq_ptpod_disable_idx;
 
 static void mt_gpu_clock_switch(unsigned int freq_new);
-static void mt_gpu_volt_switch(unsigned int volt_old, unsigned int volt_new);
+static int mt_gpu_volt_switch(unsigned int volt_old, unsigned int volt_new);
 
 #define MT8173_DBG_IMG_PWR
 
@@ -580,7 +601,10 @@ void mt_gpufreq_return_default_DVS_by_ptpod(void)
 	mutex_lock(&mt_gpufreq_lock);
 
 	for (i = 0; i < mt_gpufreqs_num; i++) {
-		mt_gpufreqs[i].gpufreq_volt = mt_gpufreqs_default[i].gpufreq_volt;
+		/* A user override is intentional and must survive PTP lifecycle
+		 * changes.  Otherwise restore the latest PTP-calibrated baseline. */
+		mt_gpufreqs[i].gpufreq_volt = suez_gpu_user_opp_mv[i] ?
+			suez_gpu_user_opp_mv[i] : suez_gpu_stock_opp_mv[i];
 		pr_debug("mt_gpufreq_return_default_DVS_by_ptpod: mt_gpufreqs[%d].gpufreq_volt = %x\n",
 			i, mt_gpufreqs[i].gpufreq_volt);
 	}
@@ -609,7 +633,13 @@ unsigned int mt_gpufreq_voltage_set_by_ptpod(unsigned int volt[], unsigned int a
 	mutex_lock(&mt_gpufreq_lock);
 
 	for (i = 0; i < array_size; i++) {
-		mt_gpufreqs[i].gpufreq_volt = GPU_VOLT_TO_MV(volt[i]);
+		unsigned int calibrated_mv = GPU_VOLT_TO_MV(volt[i]);
+
+		/* PTP supplies this device's calibration. Keep it as the reset
+		 * baseline, but never overwrite an explicit per-OPP user setting. */
+		suez_gpu_stock_opp_mv[i] = calibrated_mv;
+		if (!suez_gpu_user_opp_mv[i])
+			mt_gpufreqs[i].gpufreq_volt = calibrated_mv;
 		pr_debug("mt_gpufreqs[%d].gpufreq_volt = %x\n", i, mt_gpufreqs[i].gpufreq_volt);
 	}
 
@@ -695,6 +725,8 @@ static int mt_setup_gpufreqs_table(struct mt_gpufreq_table_info *freqs, int num)
 		mt_gpufreqs_default[i].gpufreq_khz = freqs[i].gpufreq_khz;
 		mt_gpufreqs_default[i].gpufreq_volt = freqs[i].gpufreq_volt;
 		mt_gpufreqs_default[i].gpufreq_idx = freqs[i].gpufreq_idx;
+
+		suez_gpu_stock_opp_mv[i] = freqs[i].gpufreq_volt;
 
 		pr_debug("mt_gpufreqs[%d]: gpufreq_khz = %u, gpufreq_volt = %u, gpufreq_idx = %u\n",
 			i, mt_gpufreqs[i].gpufreq_khz, mt_gpufreqs[i].gpufreq_volt, mt_gpufreqs[i].gpufreq_idx);
@@ -807,20 +839,36 @@ static void mt_gpu_clock_switch(unsigned int freq_new)
 }
 
 
-static void mt_gpu_volt_switch(unsigned int volt_old, unsigned int volt_new)
+static int mt_gpu_volt_switch(unsigned int volt_old, unsigned int volt_new)
 {
 	unsigned int delay = 0;
 	int ret;
 
 	if (volt_new == g_cur_gpu_volt)
-		return;
+		return 0;
+
+	/*
+	 * volt_new == 0 happens when this is called (e.g. from the PTPOD
+	 * PTP_CTRL_GPU voltage-compensation thread) before mt_gpufreqs[] has
+	 * been populated by mt_gpufreq_pdrv_probe()'s mt_setup_gpufreqs_table()
+	 * - the array is kzalloc'd, so an as-yet-unfilled entry's gpufreq_volt
+	 * reads as 0. regulator_set_voltage() already rejects this safely
+	 * (min > max after clamping) and we no-op afterwards without
+	 * corrupting g_cur_gpu_volt, but there's no reason to ask the
+	 * regulator framework to validate a value we already know is bogus.
+	 */
+	if (volt_new == 0) {
+		pr_err("mt_gpu_volt_switch: ignoring bogus request for 0mV (%d -> %d), gpufreq table not ready yet\n",
+			volt_old, volt_new);
+		return -EINVAL;
+	}
 
 	ret = regulator_set_voltage(g_reg_vgpu,
 			GPU_VOLT_TO_EXTBUCK_VAL(volt_new), GPU_VOLT_TO_EXTBUCK_MAXVAL(volt_new));
 	if (ret != 0) {
 		pr_err("mt_gpu_volt_switch: fail to set voltage 0x%X (%d -> %d)\n",
 			ret, volt_old, volt_new);
-		return;
+		return ret;
 	}
 
 	delay = GPU_DVFS_VOLT_SETTLE_TIME(volt_old, volt_new);
@@ -832,6 +880,7 @@ static void mt_gpu_volt_switch(unsigned int volt_old, unsigned int volt_new)
 		g_pVoltSampler(volt_new);
 
 	pr_debug("mt_gpu_volt_switch, volt_new = %d (mV)\n", volt_new);
+	return 0;
 }
 
 
@@ -948,6 +997,15 @@ unsigned int mt_gpufreq_target(unsigned int idx)
 
 		pr_debug("PTPOD disable dvfs, mt_gpufreq_ptpod_disable_idx = %d\n",
 			mt_gpufreq_ptpod_disable_idx);
+	}
+
+	/* Keep the normal DVFS ceiling at the factory suez bin.  This is separate
+	 * from thermal/battery limits and is deliberately applied after every
+	 * transient override above. */
+	if (g_user_max_id != 0 && target_freq > mt_gpufreqs[g_user_max_id].gpufreq_khz) {
+		target_freq = mt_gpufreqs[g_user_max_id].gpufreq_khz;
+		target_volt = mt_gpufreqs[g_user_max_id].gpufreq_volt;
+		target_idx = g_user_max_id;
 	}
 
     /************************************************
@@ -1724,6 +1782,77 @@ static int mt_gpufreq_opp_dump_read(struct seq_file *m, void *v)
 	return 0;
 }
 
+/*
+ * Per-OPP voltage control for Suez.  The normal MTK DVFS path remains in
+ * charge of frequency selection; this only changes the voltage requested
+ * when an individual OPP is selected.  Values are deliberately constrained
+ * to the vgpu range declared by the Suez device tree.
+ */
+static int mt_gpufreq_opp_voltage_read(struct seq_file *m, void *v)
+{
+	int i;
+	int live_uv = regulator_get_voltage(g_reg_vgpu);
+	unsigned int live_mv = live_uv > 0 ? live_uv / 1000 : 0;
+
+	seq_printf(m, "# live_vgpu_mv=%u max_mv=%u\n", live_mv,
+		   SUEZ_GPU_MAX_VOLT_MV);
+	seq_puts(m, "# freq_khz assigned_mv stock_mv\n");
+	for (i = 0; i < mt_gpufreqs_num; i++)
+		seq_printf(m, "%u %u %u\n", mt_gpufreqs[i].gpufreq_khz,
+			   mt_gpufreqs[i].gpufreq_volt,
+			   suez_gpu_stock_opp_mv[i]);
+
+	return 0;
+}
+
+static ssize_t mt_gpufreq_opp_voltage_write(struct file *file,
+		const char __user *buffer, size_t count, loff_t *data)
+{
+	char desc[64];
+	unsigned int freq, mv, old_mv;
+	int len, i, ret = 0;
+
+	len = (count < sizeof(desc) - 1) ? count : sizeof(desc) - 1;
+	if (copy_from_user(desc, buffer, len))
+		return -EFAULT;
+	desc[len] = '\0';
+
+	if (sscanf(desc, "%u %u", &freq, &mv) != 2)
+		goto invalid;
+
+	for (i = 0; i < mt_gpufreqs_num; i++)
+		if (mt_gpufreqs[i].gpufreq_khz == freq)
+			break;
+	if (i == mt_gpufreqs_num)
+		goto invalid;
+
+	if (mv == 0)
+		mv = suez_gpu_stock_opp_mv[i];
+	if (mv < SUEZ_GPU_MIN_VOLT_MV || mv > SUEZ_GPU_MAX_VOLT_MV)
+		goto invalid;
+
+	mutex_lock(&mt_gpufreq_lock);
+	old_mv = mt_gpufreqs[i].gpufreq_volt;
+	mt_gpufreqs[i].gpufreq_volt = mv;
+	/* Apply immediately when this is the live OPP.  Other OPPs are applied
+	 * normally on their next DVFS transition. */
+	if (mt_gpufreqs[i].gpufreq_idx == g_cur_gpu_idx)
+		ret = mt_gpu_volt_switch(g_cur_gpu_volt, mv);
+	if (ret)
+		mt_gpufreqs[i].gpufreq_volt = old_mv;
+	else
+		suez_gpu_user_opp_mv[i] =
+			mv == suez_gpu_stock_opp_mv[i] ? 0 : mv;
+	mutex_unlock(&mt_gpufreq_lock);
+
+	if (!ret)
+		return count;
+
+invalid:
+	pr_err("echo <exact_opp_khz> <700..1350 mV, or 0 to reset> > /proc/gpufreq/gpufreq_opp_voltage\n");
+	return -EINVAL;
+}
+
 /********************
 * show GPU power table
 *********************/
@@ -1775,8 +1904,10 @@ static ssize_t mt_gpufreq_opp_freq_write(struct file *file,
 	desc[len] = '\0';
 
 	if (!kstrtoint(desc, 10, &fixed_freq)) {
-		if (fixed_freq == 0)
+		if (fixed_freq == 0) {
 			mt_gpufreq_keep_opp_frequency_state = false;
+			g_user_max_id = 2; /* Restore the factory 445 MHz ceiling. */
+		}
 		else {
 			for (i = 0; i < mt_gpufreqs_num; i++) {
 				if (fixed_freq == mt_gpufreqs[i].gpufreq_khz) {
@@ -1787,6 +1918,8 @@ static ssize_t mt_gpufreq_opp_freq_write(struct file *file,
 			}
 
 			if (found == 1)	{
+				/* The existing proc interface is the explicit OC opt-in. */
+				g_user_max_id = i;
 				mt_gpufreq_keep_opp_frequency_state = true;
 				mt_gpufreq_keep_opp_frequency = fixed_freq;
 
@@ -1795,6 +1928,53 @@ static ssize_t mt_gpufreq_opp_freq_write(struct file *file,
 		}
 	} else
 		pr_err("bad argument!! should be [enable fixed_freq fixed_volt]\n");
+
+	return count;
+}
+
+/*
+ * Dynamic user ceiling.  Unlike gpufreq_opp_freq, this never pins an OPP:
+ * the normal MTK DVFS governor can use every point at or below the selected
+ * maximum.  Input is an exact table value in kHz, or 0 for stock 445 MHz.
+ */
+static int mt_gpufreq_max_freq_read(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%u\n", mt_gpufreqs[g_user_max_id].gpufreq_khz);
+	return 0;
+}
+
+static ssize_t mt_gpufreq_max_freq_write(struct file *file,
+		const char __user *buffer, size_t count, loff_t *data)
+{
+	char desc[32];
+	int len;
+	int max_freq;
+	int i;
+
+	len = (count < (sizeof(desc) - 1)) ? count : (sizeof(desc) - 1);
+	if (copy_from_user(desc, buffer, len))
+		return -EFAULT;
+	desc[len] = '\0';
+
+	if (kstrtoint(desc, 10, &max_freq))
+		return -EINVAL;
+
+	if (max_freq == 0) {
+		g_user_max_id = 2;
+	} else {
+		for (i = 0; i < mt_gpufreqs_num; i++) {
+			if (max_freq == mt_gpufreqs[i].gpufreq_khz) {
+				g_user_max_id = i;
+				break;
+			}
+		}
+		if (i == mt_gpufreqs_num)
+			return -EINVAL;
+	}
+
+	/* A lowered cap must take effect immediately; raising it stays dynamic. */
+	if (g_cur_gpu_freq > mt_gpufreqs[g_user_max_id].gpufreq_khz)
+		mt_gpufreq_target(g_user_max_id);
 
 	return count;
 }
@@ -1991,19 +2171,10 @@ static int mt_gpufreq_pdrv_probe(struct platform_device *pdev)
 
 	mt_gpufreq_dvfs_table_type = mt_gpufreq_check_dvfs_efuse();
 
-    /* setup gpufreq table */
-	if (mt_gpufreq_dvfs_table_type == GPUFREQ_TYPE_700)
-		mt_setup_gpufreqs_table(mt_gpufreq_opp_tbl_700, ARRAY_SIZE(mt_gpufreq_opp_tbl_700));
-	else if (mt_gpufreq_dvfs_table_type == GPUFREQ_TYPE_650)
-		mt_setup_gpufreqs_table(mt_gpufreq_opp_tbl_650, ARRAY_SIZE(mt_gpufreq_opp_tbl_650));
-	else if (mt_gpufreq_dvfs_table_type == GPUFREQ_TYPE_600)
-		mt_setup_gpufreqs_table(mt_gpufreq_opp_tbl_600, ARRAY_SIZE(mt_gpufreq_opp_tbl_600));
-	else if (mt_gpufreq_dvfs_table_type == GPUFREQ_TYPE_500)
-		mt_setup_gpufreqs_table(mt_gpufreq_opp_tbl_500, ARRAY_SIZE(mt_gpufreq_opp_tbl_500));
-	else if (mt_gpufreq_dvfs_table_type == GPUFREQ_TYPE_450)
-		mt_setup_gpufreqs_table(mt_gpufreq_opp_tbl_450, ARRAY_SIZE(mt_gpufreq_opp_tbl_450));
-	else
-		mt_setup_gpufreqs_table(mt_gpufreq_opp_tbl_500, ARRAY_SIZE(mt_gpufreq_opp_tbl_500));
+	/* Expose the vendor 698 MHz OPPs, but preserve the 445 MHz factory cap
+	 * through g_user_max_id until userspace deliberately selects one. */
+	mt_setup_gpufreqs_table(mt_gpufreq_opp_tbl_700,
+				 ARRAY_SIZE(mt_gpufreq_opp_tbl_700));
 
 	mt_gpufreq_volt_enable_state = 1;
 
@@ -2260,6 +2431,20 @@ static const struct file_operations mt_gpufreq_opp_dump_fops = {
 	.release = single_release,
 };
 
+static int mt_gpufreq_opp_voltage_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, mt_gpufreq_opp_voltage_read, NULL);
+}
+
+static const struct file_operations mt_gpufreq_opp_voltage_fops = {
+	.owner = THIS_MODULE,
+	.open = mt_gpufreq_opp_voltage_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.write = mt_gpufreq_opp_voltage_write,
+	.release = single_release,
+};
+
 static int mt_gpufreq_power_dump_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, mt_gpufreq_power_dump_read, NULL);
@@ -2283,6 +2468,20 @@ static const struct file_operations mt_gpufreq_opp_freq_fops = {
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.write = mt_gpufreq_opp_freq_write,
+	.release = single_release,
+};
+
+static int mt_gpufreq_max_freq_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, mt_gpufreq_max_freq_read, NULL);
+}
+
+static const struct file_operations mt_gpufreq_max_freq_fops = {
+	.owner = THIS_MODULE,
+	.open = mt_gpufreq_max_freq_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.write = mt_gpufreq_max_freq_write,
 	.release = single_release,
 };
 
@@ -2397,6 +2596,12 @@ static int __init mt_gpufreq_init(void)
 		pr_err("create /proc/gpufreq/gpufreq_opp_dump failed\n");
 
 	mt_entry =
+	proc_create("gpufreq_opp_voltage", S_IRUGO | S_IWUSR | S_IWGRP, mt_gpufreq_dir,
+	    &mt_gpufreq_opp_voltage_fops);
+	if (!mt_entry)
+		pr_err("create /proc/gpufreq/gpufreq_opp_voltage failed\n");
+
+	mt_entry =
 	proc_create("gpufreq_power_dump", S_IRUGO | S_IWUSR | S_IWGRP, mt_gpufreq_dir,
 	    &mt_gpufreq_power_dump_fops);
 	if (!mt_entry)
@@ -2407,6 +2612,12 @@ static int __init mt_gpufreq_init(void)
 	    &mt_gpufreq_opp_freq_fops);
 	if (!mt_entry)
 		pr_err("create /proc/gpufreq/gpufreq_opp_freq failed\n");
+
+	mt_entry =
+	proc_create("gpufreq_max_freq", S_IRUGO | S_IWUSR | S_IWGRP, mt_gpufreq_dir,
+		&mt_gpufreq_max_freq_fops);
+	if (!mt_entry)
+		pr_err("create /proc/gpufreq/gpufreq_max_freq failed\n");
 
 	mt_entry =
 	proc_create("gpufreq_var_dump", S_IRUGO | S_IWUSR | S_IWGRP, mt_gpufreq_dir,

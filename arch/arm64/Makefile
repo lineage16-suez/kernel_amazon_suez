@@ -39,6 +39,14 @@ ifeq ($(CONFIG_ARM64_ERRATUM_843419), y)
 KBUILD_CFLAGS_MODULE	+= -mcmodel=large
 endif
 
+# Diagnostic: this Makefile never applied the linker's own erratum-843419
+# ADRP fixup to the main vmlinux link (only to loadable modules above), even
+# though this mt8173 target has Cortex-A53 cores affected by the erratum.
+# The old GNU ld bundled here supports the flag but never had it enabled.
+# Harmless if not needed; only adds veneers where the erratum pattern
+# actually occurs.
+LDFLAGS_vmlinux	+= --fix-cortex-a53-843419
+
 # Default value
 head-y		:= arch/arm64/kernel/head.o
 

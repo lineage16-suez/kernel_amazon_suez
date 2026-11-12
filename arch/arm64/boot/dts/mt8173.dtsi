@@ -193,6 +193,31 @@
 			reg = <0 0x44400000 0 0x80000>;
 		};
 
+		/* Diagnostic addition: free gap between ram_console (ends
+		 * 0x44480000) and minirdump (starts 0x444f0000). Used to
+		 * capture a pstore/ramoops panic log for debugging a boot
+		 * hang that leaves no other trace. */
+		ramoops@44480000 {
+			compatible = "ramoops";
+			no-map;
+			reg = <0 0x44480000 0 0x40000>;
+			/* Kept in sync with BoardConfig.mk's BOARD_KERNEL_CMDLINE
+			 * ramoops.* params, which are what this kernel's ram.c
+			 * driver actually reads (no of_match_table -- these DT
+			 * record/console/ftrace/pmsg properties are inert for the
+			 * driver itself; only the reg range's reserved-memory
+			 * carve-out matters here). console_size is counted twice
+			 * by ramoops_probe()'s dump_mem_sz calculation -- keep
+			 * console-size*2 + ftrace-size + pmsg-size comfortably
+			 * under reg's 0x40000 total or the crash-dump zones
+			 * silently get zero room ("no room for dumps").
+			 */
+			record-size = <0x8000>;
+			console-size = <0x8000>;
+			ftrace-size = <0x2000>;
+			pmsg-size = <0x2000>;
+		};
+
 		minirdump-reserved-memory@444f0000 {
 			compatible = "minirdump-reserve-memory";
 			reg = <0 0x444f0000 0 0x10000>;
@@ -1172,61 +1197,71 @@
 		};
 
 		mdp_rdma0: mdp_rdma0@14001000 {
-			compatible = "mediatek,mt8173-mdp_rdma0";
+			/* Diagnostic: added the uppercase "MDP_RDMA0" alias.
+			 * cmdq_dev_alloc_module_base_VA_by_name() in
+			 * cmdq_device.c looks up modules by this exact
+			 * (case-sensitive) compatible string via
+			 * of_find_compatible_node(); with no match it passes
+			 * a NULL node into of_iomap(), so the CMDQ MDP base
+			 * VA silently ends up 0/invalid. This left the CMDQ
+			 * MDP subsystem unable to ever see a real "done" bit
+			 * from this hardware, causing what looked like a
+			 * boot-time hang/timeout in cmdq_mdp_dump_rdma. */
+			compatible = "mediatek,mt8173-mdp_rdma0", "mediatek,mt8173-MDP_RDMA0";
 			reg = <0 0x14001000 0 0x1000>;
 			interrupts = <GIC_SPI 170 IRQ_TYPE_LEVEL_LOW>;
 		};
 
 		mdp_rdma1: mdp_rdma1@14002000 {
-			compatible = "mediatek,mt8173-mdp_rdma1";
+			compatible = "mediatek,mt8173-mdp_rdma1", "mediatek,mt8173-MDP_RDMA1";
 			reg = <0 0x14002000 0 0x1000>;
 			interrupts = <GIC_SPI 171 IRQ_TYPE_LEVEL_LOW>;
 		};
 
 		mdp_rsz0: mdp_rsz0@14003000 {
-			compatible = "mediatek,mt8173-mdp_rsz0";
+			compatible = "mediatek,mt8173-mdp_rsz0", "mediatek,mt8173-MDP_RSZ0";
 			reg = <0 0x14003000 0 0x1000>;
 			interrupts = <GIC_SPI 172 IRQ_TYPE_LEVEL_LOW>;
 		};
 
 		mdp_rsz1: mdp_rsz1@14004000 {
-			compatible = "mediatek,mt8173-mdp_rsz1";
+			compatible = "mediatek,mt8173-mdp_rsz1", "mediatek,mt8173-MDP_RSZ1";
 			reg = <0 0x14004000 0 0x1000>;
 			interrupts = <GIC_SPI 173 IRQ_TYPE_LEVEL_LOW>;
 		};
 
 		mdp_rsz2: mdp_rsz2@14005000 {
-			compatible = "mediatek,mt8173-mdp_rsz2";
+			compatible = "mediatek,mt8173-mdp_rsz2", "mediatek,mt8173-MDP_RSZ2";
 			reg = <0 0x14005000 0 0x1000>;
 			interrupts = <GIC_SPI 174 IRQ_TYPE_LEVEL_LOW>;
 		};
 
 		mdp_wdma: mdp_wdma@14006000 {
-			compatible = "mediatek,mt8173-mdp_wdma";
+			compatible = "mediatek,mt8173-mdp_wdma", "mediatek,mt8173-MDP_WDMA";
 			reg = <0 0x14006000 0 0x1000>;
 			interrupts = <GIC_SPI 177 IRQ_TYPE_LEVEL_LOW>;
 		};
 
 		mdp_wrot0: mdp_wrot0@14007000 {
-			compatible = "mediatek,mt8173-mdp_wrot0";
+			compatible = "mediatek,mt8173-mdp_wrot0", "mediatek,mt8173-MDP_WROT0";
 			reg = <0 0x14007000 0 0x1000>;
 			interrupts = <GIC_SPI 178 IRQ_TYPE_LEVEL_LOW>;
 		};
 
 		mdp_wrot1: mdp_wrot1@14008000 {
-			compatible = "mediatek,mt8173-mdp_wrot1";
+			compatible = "mediatek,mt8173-mdp_wrot1", "mediatek,mt8173-MDP_WROT1";
 			reg = <0 0x14008000 0 0x1000>;
 			interrupts = <GIC_SPI 179 IRQ_TYPE_LEVEL_LOW>;
 		};
 
 		mdp_tdshp0: mdp_tdshp0@14009000 {
-			compatible = "mediatek,mt8173-mdp_tdshp0";
+			compatible = "mediatek,mt8173-mdp_tdshp0", "mediatek,mt8173-MDP_TDSHP0";
 			reg = <0 0x14009000 0 0x1000>;
 			interrupts = <GIC_SPI 175 IRQ_TYPE_LEVEL_LOW>;
 		};
 
 		mdp_tdshp1: mdp_tdshp1@1400a000 {
-			compatible = "mediatek,mt8173-mdp_tdshp1";
+			compatible = "mediatek,mt8173-mdp_tdshp1", "mediatek,mt8173-MDP_TDSHP1";
 			reg = <0 0x1400A000 0 0x1000>;
 			interrupts = <GIC_SPI 176 IRQ_TYPE_LEVEL_LOW>;
 		};

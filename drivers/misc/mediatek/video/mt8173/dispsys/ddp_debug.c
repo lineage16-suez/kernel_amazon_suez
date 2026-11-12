@@ -91,7 +91,23 @@ unsigned int disp_low_power_reduse_fps = 0;
 unsigned int disp_low_power_reduse_clock = 0;
 unsigned int disp_low_power_adjust_vfp = 0;
 unsigned int disp_low_power_disable_ddp_clock = 1;
-unsigned int disp_low_power_remove_ovl = 1;
+/* suez: disabled (was 1). This gates primary_display_save_power_for_idle()'s
+ * DECOUPLE<->DIRECT_LINK session-mode switch, which fires every time the
+ * video-mode DSI panel goes idle for 500ms and then wakes for a new frame
+ * (_disp_primary_path_exit_idle(), called on the next frame submission).
+ * The DC->DL "fast" switch (_DC_switch_to_DL_fast()) tears down and rebuilds
+ * the OVL->memory (WDMA) path and reconfigures RDMA to read directly from
+ * the compositor, right as the first new frame after idle needs to be
+ * shown -- exactly the moment an app switch or a dialog/modal appears.
+ * Observed as a progressive/"staircase" partial-frame reveal during such
+ * transitions, correlating with vsync timeouts and a very slow (800ms+)
+ * Choreographer frame around each DIRECT_LINK-mode-restore in logcat.
+ * Disabling this idle OVL-removal power optimization keeps the display in
+ * DIRECT_LINK mode continuously, avoiding the mode-switch race, at the cost
+ * of that specific idle power saving (other idle power paths, e.g.
+ * disp_low_power_disable_ddp_clock above, are untouched).
+ */
+unsigned int disp_low_power_remove_ovl = 0;
 unsigned int gSkipIdleDetect = 0;
 unsigned int gDumpClockStatus = 1;
 

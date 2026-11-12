@@ -94,7 +94,11 @@ static u32 slp_spm_flags = {
 };
 
 #if SLP_SLEEP_DPIDLE_EN
-static u32 slp_spm_deepidle_flags = {
+/* suez: no longer read now that slp_suspend_ops_enter() always takes the
+ * plain spm_go_to_sleep() path -- kept (rather than deleted) so reverting
+ * that change back to the spm_go_to_sleep_dpidle() branch is a one-line fix.
+ */
+static u32 __maybe_unused slp_spm_deepidle_flags = {
 	SPM_SCREEN_OFF
 };
 #endif
@@ -278,12 +282,27 @@ static int slp_suspend_ops_enter(suspend_state_t state)
 		goto LEAVE_SLEEP;
 	}
 
-#if SLP_SLEEP_DPIDLE_EN
-	if (slp_ck26m_on)
-		slp_wake_reason = spm_go_to_sleep_dpidle(slp_spm_deepidle_flags, slp_spm_data);
-	else
-#endif
-		slp_wake_reason = spm_go_to_sleep(slp_spm_flags, slp_spm_data);
+	/* suez: this is the full-system-suspend path taken on every autosleep
+	 * cycle (/sys/power/autosleep, screen off + no wakelocks), completely
+	 * separate from the per-core cpuidle governor's "dpidle" state --
+	 * disabling that state via /sys/devices/system/cpu/cpuN/cpuidle/
+	 * state0/disable (tried first) has no effect here, since this call
+	 * site doesn't consult cpuidle's state-disable flags at all. Traced
+	 * suez's ~90min-unrecoverable freeze (bootreason wdt_by_pass_pwk,
+	 * DPM Watchdog never catches it -- consistent with the CPU having
+	 * stopped executing entirely rather than a stuck driver callback) to
+	 * recurring almost exactly every ~92-93 minutes regardless of which
+	 * cpuidle states were enabled, which points at this always-exercised
+	 * autosleep entry point instead. spm_go_to_sleep_dpidle() (this file)
+	 * shares its low-level power-domain sequencing with cpuidle's dpidle
+	 * path (both opaque MediaTek SPM microcode, no source available).
+	 * Route full suspend through the plain spm_go_to_sleep()
+	 * (mt_spm_sleep.c) instead, unconditionally, to rule out that shared
+	 * sequencing as the cause without touching the undocumented microcode
+	 * itself. Revert (restore the slp_ck26m_on branch below) if this
+	 * doesn't change the freeze pattern.
+	 */
+	slp_wake_reason = spm_go_to_sleep(slp_spm_flags, slp_spm_data);
 
  LEAVE_SLEEP:
 #ifdef CONFIG_MTKPASR

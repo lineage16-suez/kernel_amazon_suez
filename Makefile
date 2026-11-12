@@ -629,6 +629,15 @@ ifdef CONFIG_CC_WERROR
 KBUILD_CFLAGS	+= -Werror
 endif
 
+# This old (3.18-era) MTK vendor code was written against GCC 4.9's warning
+# set. The newer Linaro GCC 6.3.1 toolchain adds -Wmisleading-indentation and
+# -Wbool-compare, which -Werror above then turns into hard errors in several
+# vendor driver files (f_mtp.c, mlog_logger.c, platform_uart.c,
+# gl_cfg80211.c). Downgrade just these two new warning classes back to
+# warnings rather than patching each legacy vendor source file.
+KBUILD_CFLAGS	+= $(call cc-option,-Wno-error=misleading-indentation)
+KBUILD_CFLAGS	+= $(call cc-option,-Wno-error=bool-compare)
+
 # Tell gcc to never replace conditional load with a non-conditional one
 KBUILD_CFLAGS	+= $(call cc-option,--param=allow-store-data-races=0)
 

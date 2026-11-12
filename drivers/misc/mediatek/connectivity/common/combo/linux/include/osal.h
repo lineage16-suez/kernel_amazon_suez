@@ -336,6 +336,16 @@ extern INT32 osal_unsleepable_lock_deinit(P_OSAL_UNSLEEPABLE_LOCK);
 extern INT32 osal_sleepable_lock_init(P_OSAL_SLEEPABLE_LOCK);
 #endif
 extern INT32 osal_lock_sleepable_lock(P_OSAL_SLEEPABLE_LOCK);
+/* suez: bounded-wait variant of osal_lock_sleepable_lock(), polling
+ * mutex_trylock() instead of blocking forever. Returns 0 on success, -1 if
+ * still unavailable after timeoutMs. See wmt_lib_notify_stp_sleep()'s use
+ * for why: gDevWmt.psm_lock is shared with the thermal-query path
+ * (DISABLE_PSM_MONITOR), which can itself block for a long time waiting on
+ * unresponsive combo-chip firmware -- an unbounded acquire here means the
+ * screen-off path that calls this can hang the whole system waiting for a
+ * lock that may not be released for a long time.
+ */
+extern INT32 osal_trylock_sleepable_lock_timeout(P_OSAL_SLEEPABLE_LOCK, UINT32 timeoutMs);
 extern INT32 osal_unlock_sleepable_lock(P_OSAL_SLEEPABLE_LOCK);
 extern INT32 osal_sleepable_lock_deinit(P_OSAL_SLEEPABLE_LOCK);
 

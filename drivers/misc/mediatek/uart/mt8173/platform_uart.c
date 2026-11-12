@@ -2253,6 +2253,24 @@ void mtk_uart_restore(void)
 	unsigned long flags;
 	struct mtk_uart *uart;
 
+	/* suez: console_port is only ever set by mtk_uart_console_setup(),
+	 * which is a struct console .setup callback -- it never runs unless
+	 * a UART console is actually registered, which requires
+	 * CONFIG_MTK_SERIAL_CONSOLE (disabled on this build, along with
+	 * CONFIG_SERIAL_8250[_CONSOLE], to fully turn off the physical UART
+	 * console; see suez_defconfig and its accompanying commit). With no
+	 * UART console ever registered, console_port stays NULL forever, and
+	 * this function -- called unconditionally on every full-suspend
+	 * wake with infra power-down (spm_trigger_wfi_for_sleep(), this
+	 * file's mt8173 SPM sleep path) -- crashed on every such wake with a
+	 * NULL-pointer deref. Confirmed via a captured panic backtrace
+	 * (mtk_uart_restore+0x24 -> spm_go_to_sleep -> slp_suspend_ops_enter
+	 * -> ... -> pm_suspend), traced back to this exact line. Nothing to
+	 * restore if no UART console was ever set up in the first place.
+	 */
+	if (!console_port)
+		return;
+
 	uart = console_port;
 	base = uart->base;
 

@@ -2412,8 +2412,22 @@ static int mtk_uart_syscore_suspend(void)
 	if (bt_port) {
 		struct mtk_uart *uart = bt_port;
 
-		spin_lock_irqsave(&mtk_uart_bt_lock, flags);
+		/* suez: uart_suspend_port() (drivers/tty/serial/serial_core.c)
+		 * takes port->mutex as its very first action, which can sleep.
+		 * Calling it while holding mtk_uart_bt_lock via
+		 * spin_lock_irqsave() (a spinlock, with local IRQs disabled)
+		 * is an illegal sleep-in-atomic-context bug: on this kernel
+		 * (no CONFIG_DEBUG_ATOMIC_SLEEP) it doesn't warn, it just
+		 * wedges the CPU trying to sleep with IRQs off, hanging the
+		 * whole system until the hardware watchdog force-resets it
+		 * (bootreason wdt_by_pass_pwk -- confirmed via a ram-console
+		 * capture showing a core's last PC inside uart_resume_port(),
+		 * the resume-side sibling of this same bug). Call it before
+		 * taking the lock; only the actual GPIO/register poke needs
+		 * the lock's protection.
+		 */
 		ret = uart_suspend_port(&mtk_uart_drv, &uart->port);
+		spin_lock_irqsave(&mtk_uart_bt_lock, flags);
 		/* To keeping uart idle state */
 		/* tx pin:  idle->high   power down->low */
 		mtk_uart_switch_tx_to_gpio(uart);
@@ -2432,10 +2446,14 @@ static void mtk_uart_syscore_resume(void)
 	if (bt_port) {
 		struct mtk_uart *uart = bt_port;
 
+		/* suez: see the matching comment in mtk_uart_syscore_suspend()
+		 * -- uart_resume_port() also takes port->mutex first thing,
+		 * so it must not be called under mtk_uart_bt_lock either.
+		 */
 		spin_lock_irqsave(&mtk_uart_bt_lock, flags);
 		mtk_uart_switch_to_tx(uart);
-		ret = uart_resume_port(&mtk_uart_drv, &uart->port);
 		spin_unlock_irqrestore(&mtk_uart_bt_lock, flags);
+		ret = uart_resume_port(&mtk_uart_drv, &uart->port);
 		disable_irq(uart->port.irq);
 		pr_debug("[UART%d] Resume(%d)!\n", uart->nport, ret);
 	}

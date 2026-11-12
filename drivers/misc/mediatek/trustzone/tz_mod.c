@@ -180,6 +180,14 @@ static const struct file_operations tz_client_fops = {
 
 static int tz_client_open(struct inode *inode, struct file *filp)
 {
+	/* Diagnostic: does the widevine service ever actually open
+	 * /dev/trustzone at all? If TEEClientFactory reports "No tee" without
+	 * this ever firing for that process, it's bailing out before even
+	 * trying the device -- likely some earlier userspace-side check,
+	 * not a kernel/TA problem. Low frequency (once per process), unlike
+	 * the earlier per-ioctl-call diagnostic. */
+	pr_warn("MTEE_MOD: /dev/trustzone opened by comm=%s pid=%d\n",
+		current->comm, task_pid_nr(current));
 	return tz_client_init_client_info(filp);
 }
 
@@ -624,6 +632,59 @@ static long tz_client_open_session(struct file *file, unsigned long arg)
  error_copy:
 	tz_client_unregister_session(file, param.handle);
  error_register:
+	KREE_CloseSession(handle);
+	return -EFAULT;
+}
+
+/* Handles MTEE_CMD_OPEN_SESSION_TAG (nr=7); mirrors tz_client_open_session()
+ * above but for the extended, tag-capable struct some ported userspace TEE
+ * clients expect. tag/tag_size are accepted for struct-shape compatibility
+ * but not otherwise used, since no caller observed so far sends a non-zero
+ * tag through this path.
+ */
+static long tz_client_open_session_tag(struct file *file, unsigned long arg)
+{
+	struct kree_session_cmd_param_tag param;
+	unsigned long cret;
+	char uuid[40];
+	long len;
+	TZ_RESULT ret;
+	KREE_SESSION_HANDLE handle;
+
+	cret = copy_from_user(&param, (void *)arg, sizeof(param));
+	if (cret)
+		return -EFAULT;
+
+	/* Check if can we access UUID string. 10 for min uuid len. */
+	if (!access_ok(VERIFY_READ, param.data, 10))
+		return -EFAULT;
+
+	len = strncpy_from_user(uuid,
+				(void *)(unsigned long)param.data,
+				sizeof(uuid));
+	if (len <= 0)
+		return -EFAULT;
+
+	uuid[sizeof(uuid) - 1] = 0;
+	ret = KREE_CreateSession(uuid, &handle);
+	param.ret = ret;
+
+	/* Register session to fd */
+	if (ret == TZ_RESULT_SUCCESS) {
+		param.handle = tz_client_register_session(file, handle);
+		if (param.handle < 0)
+			goto error_register_tag;
+	}
+
+	cret = copy_to_user((void *)arg, &param, sizeof(param));
+	if (cret)
+		goto error_copy_tag;
+
+	return 0;
+
+ error_copy_tag:
+	tz_client_unregister_session(file, param.handle);
+ error_register_tag:
 	KREE_CloseSession(handle);
 	return -EFAULT;
 }
@@ -1089,6 +1150,9 @@ static long do_tz_client_ioctl(struct file *file, unsigned int cmd,
 	switch (cmd) {
 	case MTEE_CMD_OPEN_SESSION:
 		return tz_client_open_session(file, arg);
+
+	case MTEE_CMD_OPEN_SESSION_TAG:
+		return tz_client_open_session_tag(file, arg);
 
 	case MTEE_CMD_CLOSE_SESSION:
 		return tz_client_close_session(file, arg);

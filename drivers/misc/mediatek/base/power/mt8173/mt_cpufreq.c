@@ -1112,6 +1112,15 @@ static struct mt_cpu_dvfs cpu_dvfs[] = {	/* TODO: FIXME, big/LITTLE exclusive, N
 			     },
 };
 
+/*
+ * The HPS hotplug service destroys and recreates a cluster's cpufreq policy.
+ * Keep an explicit user ceiling outside that transient policy so an optional
+ * OPP selected by userspace remains selected when a cluster comes back.
+ * A zero user value means "use this device's stock e-fuse ceiling".
+ */
+static unsigned int suez_user_max_khz[NR_MT_CPU_DVFS];
+static unsigned int suez_stock_max_khz[NR_MT_CPU_DVFS];
+
 #define for_each_cpu_dvfs(i, p)                 for (i = 0, p = cpu_dvfs; i < NR_MT_CPU_DVFS; i++, p = &cpu_dvfs[i])
 #define cpu_dvfs_is(p, id)                      (p == &cpu_dvfs[id])
 #define cpu_dvfs_is_available(p)               (p->opp_tbl)
@@ -1135,6 +1144,58 @@ static struct mt_cpu_dvfs *id_to_cpu_dvfs(enum mt_cpu_dvfs_id id)
 
 #define NR_MAX_OPP_TBL  8	/* TODO: refere to PTP-OD */
 #define NR_MAX_CPU      4	/* TODO: one cluster, any kernel define for this - CONFIG_NR_CPU??? */
+
+/* Per-OPP overrides are persisted across HPS policy recreation. A zero
+ * entry means the vendor OPP voltage remains in effect. */
+static unsigned int suez_user_opp_mv[NR_MT_CPU_DVFS][NR_MAX_OPP_TBL];
+static unsigned int suez_stock_opp_mv[NR_MT_CPU_DVFS][NR_MAX_OPP_TBL];
+
+/* Generic cpufreq stats belongs to a policy. MTK HPS deletes that policy
+ * while the BIG cluster is parked, so retain a cluster-owned counter. */
+struct suez_cluster_time_in_state {
+	u64 ticks[NR_MAX_OPP_TBL];
+	u64 last_update;
+	bool active;
+};
+
+static struct suez_cluster_time_in_state suez_time_in_state[NR_MT_CPU_DVFS];
+static DEFINE_SPINLOCK(suez_time_in_state_lock);
+
+static void suez_time_in_state_set_active(enum mt_cpu_dvfs_id id,
+					  int opp_idx, bool active)
+{
+	unsigned long flags;
+	struct suez_cluster_time_in_state *state;
+	u64 now = get_jiffies_64();
+
+	if (id >= NR_MT_CPU_DVFS || opp_idx < 0 || opp_idx >= NR_MAX_OPP_TBL)
+		return;
+
+	state = &suez_time_in_state[id];
+	spin_lock_irqsave(&suez_time_in_state_lock, flags);
+	if (state->active && state->last_update)
+		state->ticks[opp_idx] += now - state->last_update;
+	state->active = active;
+	state->last_update = now;
+	spin_unlock_irqrestore(&suez_time_in_state_lock, flags);
+}
+
+static void suez_time_in_state_transition(enum mt_cpu_dvfs_id id, int old_opp_idx)
+{
+	unsigned long flags;
+	struct suez_cluster_time_in_state *state;
+	u64 now = get_jiffies_64();
+
+	if (id >= NR_MT_CPU_DVFS || old_opp_idx < 0 || old_opp_idx >= NR_MAX_OPP_TBL)
+		return;
+
+	state = &suez_time_in_state[id];
+	spin_lock_irqsave(&suez_time_in_state_lock, flags);
+	if (state->active && state->last_update)
+		state->ticks[old_opp_idx] += now - state->last_update;
+	state->last_update = now;
+	spin_unlock_irqrestore(&suez_time_in_state_lock, flags);
+}
 
 			 /* LITTLE CPU LEVEL 0 *//* 1.8G, SB */
 static struct mt_cpu_freq_info opp_tbl_little_e1_0[] = {
@@ -1194,6 +1255,38 @@ static struct mt_cpu_freq_info opp_tbl_little_e1_4[] = {
 	OP(DVFS_LITTLE_F7, DVFS_LITTLE_V7),
 	OP(DVFS_LITTLE_F8, DVFS_LITTLE_V8),
 	OP(DVFS_LITTLE_F9, DVFS_LITTLE_V9),
+};
+
+/*
+ * Suez normally exposes a 1.404 GHz LITTLE-cluster ceiling.  These are all
+ * existing MT8173 vendor frequency/voltage points; the expanded table leaves
+ * that ceiling as the default policy maximum while allowing a cpufreq client
+ * such as Kernel Auditor to opt in to the vendor 1.508, 1.807, or 1.924 GHz
+ * points.
+ */
+static struct mt_cpu_freq_info opp_tbl_little_suez_oc[] = {
+	OP(DVFS_LITTLE_SB_F00, DVFS_LITTLE_V0),
+	OP(DVFS_LITTLE_SB_F10, DVFS_LITTLE_V0),
+	/* Retain the vendor voltage step before the top speed-bin OPPs. */
+	OP(DVFS_LITTLE_F01, DVFS_LITTLE_V01),
+	OP(DVFS_LITTLE_F2, DVFS_LITTLE_V2),
+	OP(DVFS_LITTLE_F3, DVFS_LITTLE_V3),
+	OP(DVFS_LITTLE_F6, DVFS_LITTLE_V6),
+	OP(DVFS_LITTLE_F8, DVFS_LITTLE_V8),
+	OP(DVFS_LITTLE_F9, DVFS_LITTLE_V9),
+};
+
+/* Keep the A57 stock ceiling at 1.807 GHz, while exposing the existing
+ * vendor 1.911/1.989/2.106 GHz OPPs as optional cpufreq limits. */
+static struct mt_cpu_freq_info opp_tbl_big_suez_oc[] = {
+	OP(DVFS_BIG_SB_F10, DVFS_BIG_SB_V10),
+	OP(DVFS_BIG_F0, DVFS_BIG_V0),
+	OP(DVFS_BIG_F01, DVFS_BIG_V01),
+	OP(DVFS_BIG_F1, DVFS_BIG_V1),
+	OP(DVFS_BIG_F5, DVFS_BIG_V5),
+	OP(DVFS_BIG_F8, DVFS_BIG_V8),
+	OP(DVFS_BIG_F10, DVFS_BIG_V10),
+	OP(DVFS_BIG_F11, DVFS_BIG_V11),
 };
 
 		      /* big CPU LEVEL 0 *//* 2.1G, SB */
@@ -1410,6 +1503,7 @@ static int _set_cur_volt_locked(struct mt_cpu_dvfs *p, unsigned int mv)
 static int _restore_default_volt(struct mt_cpu_dvfs *p)
 {
 	unsigned long flags;
+	enum mt_cpu_dvfs_id id;
 	int i;
 	int ret = -1;
 
@@ -1424,9 +1518,20 @@ static int _restore_default_volt(struct mt_cpu_dvfs *p)
 
 	cpufreq_lock(flags);	/* TODO: is it necessary??? */
 
-	/* restore to default volt */
-	for (i = 0; i < p->nr_opp_tbl; i++)
-		p->opp_tbl[i].cpufreq_volt = p->opp_tbl[i].cpufreq_volt_org;
+	/*
+	 * A few MTK paths call this while recreating or revalidating a policy.
+	 * Those paths must restore vendor defaults only for untouched OPPs: a
+	 * user-selected per-OPP voltage is a policy property, not a transient
+	 * runtime value, and changing a frequency limit must not discard it.
+	 */
+	id = cpu_dvfs_is(p, MT_CPU_DVFS_BIG) ?
+		MT_CPU_DVFS_BIG : MT_CPU_DVFS_LITTLE;
+	for (i = 0; i < p->nr_opp_tbl; i++) {
+		if (!suez_stock_opp_mv[id][i])
+			suez_stock_opp_mv[id][i] = p->opp_tbl[i].cpufreq_volt_org;
+		p->opp_tbl[i].cpufreq_volt = suez_user_opp_mv[id][i] ?
+			suez_user_opp_mv[id][i] : suez_stock_opp_mv[id][i];
+	}
 
 	/* set volt */
 	ret = _set_cur_volt_locked(p,
@@ -1465,6 +1570,7 @@ int mt_cpufreq_voltage_set_by_ptpod(enum mt_cpu_dvfs_id id, unsigned int *volt_t
 {				/* TODO: rename to mt_cpufreq_update_volt() */
 	struct mt_cpu_dvfs *p = id_to_cpu_dvfs(id);
 	unsigned long flags;
+	unsigned int calibrated_mv;
 	int i;
 	int ret = -1;
 
@@ -1488,9 +1594,17 @@ int mt_cpufreq_voltage_set_by_ptpod(enum mt_cpu_dvfs_id id, unsigned int *volt_t
 
 	cpufreq_lock(flags);
 
-	/* update volt table */
-	for (i = 0; i < nr_volt_tbl; i++)
-		p->opp_tbl[i].cpufreq_volt = PMIC_VAL_TO_VOLT(volt_tbl[i]);
+	/*
+	 * PTP supplies the calibrated factory voltage table asynchronously.  Keep
+	 * it as the reset-to-stock baseline, but do not let a later calibration
+	 * notification discard an explicit per-OPP user selection.
+	 */
+	for (i = 0; i < nr_volt_tbl; i++) {
+		calibrated_mv = PMIC_VAL_TO_VOLT(volt_tbl[i]);
+		suez_stock_opp_mv[id][i] = calibrated_mv;
+		if (!suez_user_opp_mv[id][i])
+			p->opp_tbl[i].cpufreq_volt = calibrated_mv;
+	}
 
 	/* set volt */
 	ret = _set_cur_volt_locked(p,
@@ -2363,6 +2477,9 @@ static void _mt_cpufreq_set(enum mt_cpu_dvfs_id id, int new_opp_idx)
 	cur_freq = p->ops->get_cur_phy_freq(p);
 	target_freq = cpu_dvfs_get_freq_by_idx(p, new_opp_idx);
 
+	/* Account the previous OPP before changing the hardware clock. */
+	suez_time_in_state_transition(id, p->idx_opp_tbl);
+
 #if 0				/* not in mt8173 */
 	/* enable FBB for CA15L before entering into first OPP */
 	if (id == MT_CPU_DVFS_BIG && num_online_big_cpus() > 0 && 0 != p->idx_opp_tbl
@@ -2596,6 +2713,46 @@ static int __cpuinit extbuck_cpu_callback(struct notifier_block *nfb,
 
 static struct notifier_block __refdata extbuck_cpu_notifier = {
 	.notifier_call = extbuck_cpu_callback,
+};
+
+/* Match BIG-cluster residency to the HPS lifetime of its rail/policy. */
+static int __cpuinit suez_time_in_state_cpu_callback(struct notifier_block *nfb,
+						     unsigned long action, void *hcpu)
+{
+	unsigned int cpu = (unsigned long)hcpu;
+	struct mt_cpu_dvfs *p;
+	int num_online_little, num_online_big;
+
+	if (!hps_cpu_is_cpu_big(cpu))
+		return NOTIFY_OK;
+	if (hps_get_num_online_cpus(&num_online_little, &num_online_big) == -1)
+		return NOTIFY_OK;
+
+	p = id_to_cpu_dvfs(MT_CPU_DVFS_BIG);
+	if (!p)
+		return NOTIFY_OK;
+
+	switch (action & 0xF) {
+	case CPU_UP_PREPARE:
+		/* HPS has not counted the new BIG CPU at this point. */
+		if (num_online_big == 0)
+			suez_time_in_state_set_active(MT_CPU_DVFS_BIG,
+						      p->idx_opp_tbl, true);
+		break;
+	case CPU_DEAD:
+	case CPU_UP_CANCELED:
+		/* HPS now reports the post-transition online count. */
+		if (num_online_big == 0)
+			suez_time_in_state_set_active(MT_CPU_DVFS_BIG,
+						      p->idx_opp_tbl, false);
+		break;
+	}
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block __refdata suez_time_in_state_cpu_notifier = {
+	.notifier_call = suez_time_in_state_cpu_callback,
 };
 
 
@@ -4423,10 +4580,23 @@ static int _mt_cpufreq_init(struct cpufreq_policy *policy)
 		enum mt_cpu_dvfs_id id = _get_cpu_dvfs_id(policy->cpu);
 		struct mt_cpu_dvfs *p = id_to_cpu_dvfs(id);
 		int lv = read_efuse_speed(id);	/* i.e. g_cpufreq_get_ptp_level */
-		struct opp_tbl_info *opp_tbl_info =
+		struct opp_tbl_info *stock_opp_tbl_info =
 		    (MT_CPU_DVFS_BIG ==
 		     id) ? &opp_tbls_big[CPU_LV_TO_OPP_IDX(lv)] :
 		    &opp_tbls_little[CPU_LV_TO_OPP_IDX(lv)];
+		struct opp_tbl_info suez_little_oc_tbl = {
+			opp_tbl_little_suez_oc, ARRAY_SIZE(opp_tbl_little_suez_oc)
+		};
+		struct opp_tbl_info suez_big_oc_tbl = {
+			opp_tbl_big_suez_oc, ARRAY_SIZE(opp_tbl_big_suez_oc)
+		};
+		struct opp_tbl_info *opp_tbl_info =
+			(MT_CPU_DVFS_LITTLE == id) ? &suez_little_oc_tbl :
+			&suez_big_oc_tbl;
+		unsigned int stock_max_khz = stock_opp_tbl_info->opp_tbl[0].cpufreq_khz;
+		int stock_max_idx;
+		int user_max_idx;
+		int i;
 
 		BUG_ON(NULL == p);
 		BUG_ON(!(lv == CPU_LEVEL_1 || lv == CPU_LEVEL_2
@@ -4434,16 +4604,47 @@ static int _mt_cpufreq_init(struct cpufreq_policy *policy)
 
 		ret = _mt_cpufreq_setup_freqs_table(policy,
 						    opp_tbl_info->opp_tbl, opp_tbl_info->size);
+		if (ret)
+			return ret;
+
+		/* Restore stock or user-selected voltages after HPS recreates a
+		 * cpufreq policy. The custom OPP arrays themselves are static, but
+		 * keeping the defaults separately makes reset-to-stock deterministic. */
+		for (i = 0; i < p->nr_opp_tbl; i++) {
+			if (!suez_stock_opp_mv[id][i])
+				suez_stock_opp_mv[id][i] = p->opp_tbl[i].cpufreq_volt;
+			p->opp_tbl[i].cpufreq_volt = suez_user_opp_mv[id][i] ?
+				suez_user_opp_mv[id][i] : suez_stock_opp_mv[id][i];
+		}
+		suez_time_in_state_set_active(id, p->idx_opp_tbl, true);
 
 		policy->cpuinfo.max_freq = cpu_dvfs_get_max_freq(id_to_cpu_dvfs(id));
 		policy->cpuinfo.min_freq = cpu_dvfs_get_min_freq(id_to_cpu_dvfs(id));
 
 		policy->cur = _mt_cpufreq_get_cur_phy_freq(id);	/* use cur phy freq is better */
-		policy->max = cpu_dvfs_get_max_freq(id_to_cpu_dvfs(id));
+		stock_max_idx =
+			_search_available_freq_idx(p, stock_max_khz, CPUFREQ_RELATION_H);
+		suez_stock_max_khz[id] = stock_max_khz;
+		user_max_idx = stock_max_idx;
+		if (suez_user_max_khz[id]) {
+			int idx = _search_available_freq_idx(p, suez_user_max_khz[id],
+						     CPUFREQ_RELATION_H);
+
+			if (idx >= 0 &&
+			    cpu_dvfs_get_freq_by_idx(p, idx) == suez_user_max_khz[id])
+				user_max_idx = idx;
+			else
+				suez_user_max_khz[id] = stock_max_khz;
+		} else {
+			suez_user_max_khz[id] = stock_max_khz;
+		}
+
+		/* cpuinfo exposes optional points; policy starts at the persisted ceiling. */
+		policy->max = cpu_dvfs_get_freq_by_idx(p, user_max_idx);
 		policy->min = cpu_dvfs_get_min_freq(id_to_cpu_dvfs(id));
 
 		if (_sync_opp_tbl_idx(p) >= 0)	/* sync p->idx_opp_tbl first before _restore_default_volt() */
-			p->idx_normal_max_opp = p->idx_opp_tbl;
+			p->idx_normal_max_opp = user_max_idx;
 
 		/* restore default volt, sync opp idx, set default limit */
 		/* _restore_default_volt(p); */
@@ -4866,6 +5067,7 @@ static int _mt_cpufreq_pdrv_probe(struct platform_device *pdev)
 	ret = cpufreq_register_driver(&_mt_cpufreq_driver);
 	register_hotcpu_notifier(&turbo_mode_cpu_notifier);	/* <-XXX */
 	register_hotcpu_notifier(&extbuck_cpu_notifier);
+	register_hotcpu_notifier(&suez_time_in_state_cpu_notifier);
 
 	_mt_cpufreq_pdrv_probed = 1;
 
@@ -4879,6 +5081,7 @@ static int _mt_cpufreq_pdrv_remove(struct platform_device *pdev)
 	FUNC_ENTER(FUNC_LV_MODULE);
 
 	unregister_hotcpu_notifier(&extbuck_cpu_notifier);
+	unregister_hotcpu_notifier(&suez_time_in_state_cpu_notifier);
 	unregister_hotcpu_notifier(&turbo_mode_cpu_notifier);	/* <-XXX */
 	cpufreq_unregister_driver(&_mt_cpufreq_driver);
 
@@ -5782,6 +5985,192 @@ static ssize_t cpufreq_freq_proc_write(struct file *file, const char __user *buf
 	return count;
 }
 
+/* cpufreq_max_freq: persistent dynamic ceiling for a hotpluggable cluster */
+static int cpufreq_max_freq_proc_show(struct seq_file *m, void *v)
+{
+	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)m->private;
+	enum mt_cpu_dvfs_id id = cpu_dvfs_is(p, MT_CPU_DVFS_BIG) ?
+		MT_CPU_DVFS_BIG : MT_CPU_DVFS_LITTLE;
+
+	seq_printf(m, "%u\n", suez_user_max_khz[id] ?
+		   suez_user_max_khz[id] : suez_stock_max_khz[id]);
+
+	return 0;
+}
+
+static ssize_t cpufreq_max_freq_proc_write(struct file *file,
+					   const char __user *buffer, size_t count,
+					   loff_t *pos)
+{
+	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+	struct cpufreq_policy *policy;
+	enum mt_cpu_dvfs_id id;
+	unsigned long flags;
+	unsigned int freq;
+	int idx;
+	char *buf = _copy_from_user_for_proc(buffer, count);
+
+	if (!buf)
+		return -EINVAL;
+
+	BUG_ON(NULL == p);
+	id = cpu_dvfs_is(p, MT_CPU_DVFS_BIG) ?
+		MT_CPU_DVFS_BIG : MT_CPU_DVFS_LITTLE;
+
+	if (kstrtouint(buf, 10, &freq))
+		goto invalid;
+
+	if (freq == 0)
+		freq = suez_stock_max_khz[id];
+
+	idx = _search_available_freq_idx(p, freq, CPUFREQ_RELATION_H);
+	if (idx < 0 || cpu_dvfs_get_freq_by_idx(p, idx) != freq)
+		goto invalid;
+
+	cpufreq_lock(flags);
+	suez_user_max_khz[id] = freq;
+	p->idx_normal_max_opp = idx;
+	cpufreq_unlock(flags);
+
+	/* The policy may not exist while this cluster is hotplugged off. */
+	policy = cpufreq_cpu_get(p->cpu_id);
+	if (policy) {
+		policy->max = freq;
+		if (policy->min > policy->max)
+			policy->min = policy->max;
+		if (policy->cur > policy->max)
+			cpufreq_driver_target(policy, policy->max, CPUFREQ_RELATION_H);
+		cpufreq_cpu_put(policy);
+	}
+
+	free_page((unsigned long)buf);
+	return count;
+
+invalid:
+	cpufreq_err("echo exact OPP khz or 0 > /proc/cpufreq/%s/cpufreq_max_freq\n",
+		    p->name);
+	free_page((unsigned long)buf);
+	return -EINVAL;
+}
+
+/* Persistent per-cluster equivalent of cpufreq stats/time_in_state. */
+static int cpufreq_time_in_state_proc_show(struct seq_file *m, void *v)
+{
+	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)m->private;
+	enum mt_cpu_dvfs_id id = cpu_dvfs_is(p, MT_CPU_DVFS_BIG) ?
+		MT_CPU_DVFS_BIG : MT_CPU_DVFS_LITTLE;
+	struct suez_cluster_time_in_state *state = &suez_time_in_state[id];
+	unsigned long flags;
+	u64 ticks[NR_MAX_OPP_TBL];
+	u64 now = get_jiffies_64();
+	u64 pending = 0;
+	int active_idx = -1;
+	int i;
+
+	spin_lock_irqsave(&suez_time_in_state_lock, flags);
+	memcpy(ticks, state->ticks, sizeof(ticks));
+	if (state->active && state->last_update) {
+		active_idx = p->idx_opp_tbl;
+		pending = now - state->last_update;
+	}
+	spin_unlock_irqrestore(&suez_time_in_state_lock, flags);
+
+	for (i = 0; i < p->nr_opp_tbl; i++) {
+		u64 value = ticks[i];
+		if (i == active_idx)
+			value += pending;
+		seq_printf(m, "%u %llu\n", p->opp_tbl[i].cpufreq_khz,
+			   (unsigned long long)jiffies_64_to_clock_t(value));
+	}
+
+	return 0;
+}
+
+/* Per-OPP voltage tuning for Suez. The values are target millivolts; the
+ * regulator driver selects the nearest hardware step and the live readback
+ * below reports what the DVFS driver sees after the transition. 1.137 V is
+ * the explicit VPROC tuning ceiling, below the 1.150 V rail limit. */
+static unsigned int suez_opp_voltage_limit(struct mt_cpu_dvfs *p)
+{
+	return 1137;
+}
+
+static int cpufreq_opp_voltage_proc_show(struct seq_file *m, void *v)
+{
+	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)m->private;
+	enum mt_cpu_dvfs_id id = cpu_dvfs_is(p, MT_CPU_DVFS_BIG) ?
+		MT_CPU_DVFS_BIG : MT_CPU_DVFS_LITTLE;
+	unsigned int live_vproc_mv = p->ops->get_cur_volt(p);
+	unsigned int live_vsram_mv = 0;
+	int i;
+
+	if (cpu_dvfs_is(p, MT_CPU_DVFS_BIG))
+		live_vsram_mv = get_cur_vsram_big(p);
+
+	/* These are regulator readbacks, not requested OPP table values. */
+	seq_printf(m, "# live_vproc_mv=%u live_vsram_mv=%u max_mv=%u\n",
+		   live_vproc_mv, live_vsram_mv, suez_opp_voltage_limit(p));
+	seq_puts(m, "# freq_khz assigned_mv stock_mv\n");
+	for (i = 0; i < p->nr_opp_tbl; i++)
+		seq_printf(m, "%u %u %u\n", p->opp_tbl[i].cpufreq_khz,
+			   p->opp_tbl[i].cpufreq_volt, suez_stock_opp_mv[id][i]);
+
+	return 0;
+}
+
+static ssize_t cpufreq_opp_voltage_proc_write(struct file *file,
+		const char __user *buffer, size_t count, loff_t *pos)
+{
+	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+	enum mt_cpu_dvfs_id id = cpu_dvfs_is(p, MT_CPU_DVFS_BIG) ?
+		MT_CPU_DVFS_BIG : MT_CPU_DVFS_LITTLE;
+	unsigned long flags;
+	unsigned int freq, mv, old_mv;
+	int i, ret = 0;
+	char *buf = _copy_from_user_for_proc(buffer, count);
+
+	if (!buf)
+		return -EINVAL;
+
+	if (sscanf(buf, "%u %u", &freq, &mv) != 2)
+		goto invalid;
+
+	for (i = 0; i < p->nr_opp_tbl; i++)
+		if (p->opp_tbl[i].cpufreq_khz == freq)
+			break;
+	if (i == p->nr_opp_tbl)
+		goto invalid;
+
+	if (mv == 0)
+		mv = suez_stock_opp_mv[id][i];
+	if (mv < 800 || mv > suez_opp_voltage_limit(p))
+		goto invalid;
+
+	cpufreq_lock(flags);
+	old_mv = p->opp_tbl[i].cpufreq_volt;
+	p->opp_tbl[i].cpufreq_volt = mv;
+	if (p->idx_opp_tbl == i) {
+		ret = _set_cur_volt_locked(p, mv);
+		if (ret)
+			p->opp_tbl[i].cpufreq_volt = old_mv;
+	}
+	if (!ret)
+		suez_user_opp_mv[id][i] =
+			mv == suez_stock_opp_mv[id][i] ? 0 : mv;
+	cpufreq_unlock(flags);
+
+	if (ret)
+		goto invalid;
+	free_page((unsigned long)buf);
+	return count;
+
+invalid:
+	cpufreq_err("echo <exact_opp_khz> <800..%u mV, or 0 to reset> > /proc/cpufreq/%s/cpufreq_opp_voltage\n",
+		    suez_opp_voltage_limit(p), p->name);
+	free_page((unsigned long)buf);
+	return -EINVAL;
+}
+
 /* cpufreq_volt */
 static int cpufreq_volt_proc_show(struct seq_file *m, void *v)
 {				/* <-XXX */
@@ -5917,6 +6306,9 @@ PROC_FOPS_RW(cpufreq_ptpod_temperature_limit);
 PROC_FOPS_RW(cpufreq_ptpod_temperature_time);
 PROC_FOPS_RW(cpufreq_oppidx);	/* <-XXX */
 PROC_FOPS_RW(cpufreq_freq);	/* <-XXX */
+PROC_FOPS_RW(cpufreq_max_freq);
+PROC_FOPS_RO(cpufreq_time_in_state);
+PROC_FOPS_RW(cpufreq_opp_voltage);
 PROC_FOPS_RW(cpufreq_volt);	/* <-XXX */
 PROC_FOPS_RW(cpufreq_turbo_mode);	/* <-XXX */
 
@@ -5953,6 +6345,9 @@ static int _create_procfs(void)
 		PROC_ENTRY(cpufreq_ptpod_temperature_time),
 		PROC_ENTRY(cpufreq_oppidx),	/* <-XXX */
 		PROC_ENTRY(cpufreq_freq),	/* <-XXX */
+		PROC_ENTRY(cpufreq_max_freq),
+		PROC_ENTRY(cpufreq_time_in_state),
+		PROC_ENTRY(cpufreq_opp_voltage),
 		PROC_ENTRY(cpufreq_volt),	/* <-XXX */
 		PROC_ENTRY(cpufreq_turbo_mode),	/* <-XXX */
 	};

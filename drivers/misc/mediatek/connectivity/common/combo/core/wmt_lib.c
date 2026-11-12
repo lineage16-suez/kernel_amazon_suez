@@ -1800,9 +1800,24 @@ INT32 wmt_lib_notify_stp_sleep(VOID)
 {
 	INT32 iRet = 0x0;
 
-	iRet = wmt_lib_psm_lock_aquire();
+	/* suez: this runs synchronously from the screen-off fb_notifier path
+	 * (wmt_fb_notifier_callback -> mtk_wmt_func_off_background), and
+	 * gDevWmt.psm_lock is the same lock DISABLE_PSM_MONITOR() takes from
+	 * the periodic thermal-query path (wmt_dev_tm_temp_query and
+	 * friends), which can itself block for a long time on unresponsive
+	 * combo-chip firmware (confirmed separately: STP-BTM fw-assert
+	 * recovery). The normal blocking acquire here had no timeout, so if
+	 * the thermal path was already holding the lock when the screen
+	 * turned off, this would block indefinitely -- freezing the whole
+	 * screen-off sequence with no watchdog able to catch it (not a
+	 * device suspend/resume callback, invisible to DPM_WATCHDOG).
+	 * Give up after 2s and skip the STP sleep notification rather than
+	 * hang forever; skipping it once in a rare contention case is far
+	 * better than a full freeze.
+	 */
+	iRet = osal_trylock_sleepable_lock_timeout(&gDevWmt.psm_lock, 2000);
 	if (iRet) {
-		WMT_ERR_FUNC("--->lock psm_lock failed, iRet=%d\n", iRet);
+		WMT_ERR_FUNC("--->lock psm_lock timed out, skipping STP sleep notify\n");
 		return iRet;
 	}
 

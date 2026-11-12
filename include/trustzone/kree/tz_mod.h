@@ -39,6 +39,15 @@
 #define MTEE_CMD_SHM_REG_WITH_TAG \
 		_IOWR(MTEE_IOC_MAGIC,  6, struct kree_tee_service_cmd_param)
 
+/*
+ * Some ported userspace TEE clients (built against a newer MediaTek KREE
+ * revision than this kernel's driver) open sessions with an extended,
+ * tag-capable struct instead of the plain kree_session_cmd_param below.
+ * Reverse-engineered from such a userspace .so's ioctl() call site:
+ * nr=7, struct size=32 bytes (vs. nr=1/16 bytes for the plain form).
+ */
+#define MTEE_CMD_OPEN_SESSION_TAG \
+		_IOWR(MTEE_IOC_MAGIC,  7, struct kree_session_cmd_param_tag)
 
 #define DEV_IOC_MAXNR       (10)
 
@@ -47,6 +56,19 @@ struct kree_session_cmd_param {
 	int32_t ret;
 	int32_t handle;
 	uint64_t data;
+};
+
+/* extended open-session param with an optional tag (see
+ * MTEE_CMD_OPEN_SESSION_TAG above); tag/tag_size are accepted but not
+ * currently acted on, matching the plain kree_session_cmd_param behavior.
+ */
+struct kree_session_cmd_param_tag {
+	int32_t ret;
+	int32_t handle;
+	uint64_t data;
+	uint64_t tag;
+	uint32_t tag_size;
+	uint32_t reserved;
 };
 
 /* param for tee service call */

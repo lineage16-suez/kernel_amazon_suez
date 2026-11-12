@@ -21,6 +21,7 @@
 
 #include <linux/mm.h>
 #include <linux/module.h>
+#include <linux/sched.h>
 #include <linux/file.h>
 #include <linux/slab.h>
 #include <linux/time.h>
@@ -1015,8 +1016,23 @@ static int snd_pcm_pre_start(struct snd_pcm_substream *substream, int state)
 	if (runtime->status->state != SNDRV_PCM_STATE_PREPARED)
 		return -EBADFD;
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK &&
-	    !snd_pcm_playback_data(substream))
+	    !snd_pcm_playback_data(substream)) {
+		/* Diagnostic only, no behavior change: suez's audio HAL logs
+		 * "cannot start channel: Broken pipe" from tinyalsa's
+		 * pcm_start() correlating with AudioFlinger createEffect()
+		 * watchdog aborts. Confirming here whether that -EPIPE is
+		 * genuinely "no data queued yet" (avail == buffer_size) vs.
+		 * some other playback_data() edge case, and how long after
+		 * the last successful prepare/start this substream is being
+		 * asked to start again.
+		 */
+		pr_warn("snd_pcm_pre_start: EPIPE avail=%lu buffer_size=%lu stop_threshold=%lu boundary=%lu jiffies_since_hw_ptr=%lu comm=%s pid=%d\n",
+			snd_pcm_playback_avail(runtime), runtime->buffer_size,
+			runtime->stop_threshold, runtime->boundary,
+			jiffies - runtime->hw_ptr_jiffies, current->comm,
+			task_pid_nr(current));
 		return -EPIPE;
+	}
 	runtime->trigger_master = substream;
 	return 0;
 }

@@ -138,6 +138,16 @@ static void __dma_free_coherent(struct device *dev, size_t size,
 		swiotlb_free_coherent(dev, size, vaddr, dma_handle);
 }
 
+/* Diagnostic: serialize the vmap/vunmap-based noncoherent DMA remap path
+ * across all cores. A real kernel panic during boot showed multiple CPU
+ * cores simultaneously stuck at the same PC inside __dma_free_noncoherent
+ * (the vunmap() call below), suggesting SMP contention/corruption in this
+ * legacy remap path when multiple drivers concurrently alloc/free
+ * DMA-coherent buffers. This mutex is only ever taken while __GFP_WAIT is
+ * set (the atomic/pool-backed fast paths return before reaching it), so it
+ * is safe to sleep here. */
+static DEFINE_MUTEX(noncoherent_remap_lock);
+
 static void *__dma_alloc_noncoherent(struct device *dev, size_t size,
 				     dma_addr_t *dma_handle, gfp_t flags,
 				     struct dma_attrs *attrs)
@@ -167,10 +177,12 @@ static void *__dma_alloc_noncoherent(struct device *dev, size_t size,
 
 	/* create a coherent mapping */
 	page = virt_to_page(ptr);
+	mutex_lock(&noncoherent_remap_lock);
 	coherent_ptr = dma_common_contiguous_remap(page, size, VM_USERMAP,
 				__get_dma_pgprot(attrs,
 					__pgprot(PROT_NORMAL_NC), false),
 					NULL);
+	mutex_unlock(&noncoherent_remap_lock);
 	if (!coherent_ptr)
 		goto no_map;
 
@@ -191,7 +203,9 @@ static void __dma_free_noncoherent(struct device *dev, size_t size,
 
 	if (__free_from_pool(vaddr, size))
 		return;
+	mutex_lock(&noncoherent_remap_lock);
 	vunmap(vaddr);
+	mutex_unlock(&noncoherent_remap_lock);
 	__dma_free_coherent(dev, size, swiotlb_addr, dma_handle, attrs);
 }
 

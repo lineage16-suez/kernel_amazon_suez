@@ -262,7 +262,12 @@ CONFIG_LEDS_TRIGGER_TIMER=y
 CONFIG_LEDS_TRIGGERS=y
 CONFIG_LEGACY_PTY_COUNT=16
 CONFIG_LOCKUP_DETECTOR=y
-CONFIG_LOG_BUF_SHIFT=14
+CONFIG_BOOTPARAM_HARDLOCKUP_PANIC=y
+CONFIG_BOOTPARAM_SOFTLOCKUP_PANIC=y
+CONFIG_DETECT_HUNG_TASK=y
+CONFIG_DEFAULT_HUNG_TASK_TIMEOUT=30
+CONFIG_BOOTPARAM_HUNG_TASK_PANIC=y
+CONFIG_LOG_BUF_SHIFT=18
 CONFIG_LOGIG940_FF=y
 CONFIG_LOGIRUMBLEPAD2_FF=y
 CONFIG_LOGITECH_FF=y
@@ -295,7 +300,6 @@ CONFIG_MTD_NAND_IDS=y
 CONFIG_MTD=y
 CONFIG_MTK_ACCDET=y
 CONFIG_MTK_AEE_FEATURE=y
-CONFIG_MTK_AEE_IPANIC=y
 CONFIG_MTK_AUTO_POWER_ON_WITH_CHARGER=y
 CONFIG_MTK_AUXADC=y
 CONFIG_MTK_BATTERY_CVR_SUPPORT=y
@@ -354,6 +358,14 @@ CONFIG_MTK_RAM_CONSOLE_DRAM_SIZE=0x80000
 CONFIG_MTK_RAM_CONSOLE_SIZE=0x3000
 CONFIG_MTK_RAM_CONSOLE_USING_DRAM=y
 CONFIG_MTK_RAM_CONSOLE=y
+CONFIG_PSTORE=y
+CONFIG_PSTORE_CONSOLE=y
+CONFIG_PSTORE_PMSG=y
+CONFIG_PSTORE_RAM=y
+CONFIG_PSTORE_CONSOLE_SIZE=0x20000
+CONFIG_PSTORE_PMSG_SIZE=0x4000
+CONFIG_PSTORE_MEM_ADDR=0x44480000
+CONFIG_PSTORE_MEM_SIZE=0x40000
 CONFIG_MTK_RTC=y
 CONFIG_MTK_SCHED_RQAVG_KS=y
 CONFIG_MTK_SCHED_RQAVG_US=y
@@ -468,13 +480,29 @@ CONFIG_NR_CPUS=4
 CONFIG_ONEKEY_REBOOT_NORMAL_MODE=y
 CONFIG_ONEKEY_REBOOT_OTHER_MODE=y
 CONFIG_PACKET=y
-CONFIG_PANIC_ON_OOPS=y
+# CONFIG_PANIC_ON_OOPS is not set
+CONFIG_PANIC_ON_OOPS_VALUE=0
 CONFIG_PANIC_TIMEOUT=1
 CONFIG_PANTHERLORD_FF=y
 CONFIG_PM_AUTOSLEEP=y
 CONFIG_PM_RUNTIME=y
 CONFIG_PM_WAKELOCKS_LIMIT=0
 CONFIG_PM_WAKELOCKS=y
+# suez: unexplained freeze/hang reboots (bootreason=wdt_by_pass_pwk) tracked
+# down via logcat boundary analysis to a device suspend/resume callback that
+# never returns (freeze occurs ~2min after boot, right at/around the first
+# PM suspend entry/exit; the device then sits hung with no panic for ~90min
+# until something eventually force-resets it). Nothing currently detects a
+# stuck .suspend()/.resume(), so it's invisible which driver is at fault.
+# DPM_WATCHDOG arms a per-device timer around each suspend/resume callback
+# and panics with the offending device's name if it doesn't return in time --
+# panic() output lands in the pstore console-ramoops dump (already fixed to
+# have correct sizing) for inspection on the next boot, and
+# CONFIG_PANIC_TIMEOUT=1 above then reboots almost immediately instead of
+# leaving the device hung for ~90 minutes.
+CONFIG_PM_DEBUG=y
+CONFIG_DPM_WATCHDOG=y
+CONFIG_DPM_WATCHDOG_TIMEOUT=20
 CONFIG_PPP_ASYNC=y
 CONFIG_PPP_BSDCOMP=y
 CONFIG_PPP_DEFLATE=y
@@ -491,6 +519,7 @@ CONFIG_PRINTK_TIME=y
 CONFIG_PROFILING=y
 CONFIG_RCU_CPU_STALL_TIMEOUT=60
 CONFIG_RCU_FANOUT=32
+CONFIG_RD_GZIP=y
 CONFIG_RD_LZMA=y
 CONFIG_REGULATOR_MT6311=y
 CONFIG_REGULATOR_MT6397=y
@@ -515,8 +544,9 @@ CONFIG_SECURITY_NETWORK=y
 CONFIG_SECURITY_SELINUX_BOOTPARAM=y
 CONFIG_SECURITY_SELINUX=y
 CONFIG_SECURITY=y
-CONFIG_SERIAL_8250_CONSOLE=y
-CONFIG_SERIAL_8250=y
+# CONFIG_SERIAL_8250_CONSOLE is not set
+# CONFIG_SERIAL_8250 is not set
+# CONFIG_MTK_SERIAL_CONSOLE is not set
 CONFIG_SETEND_EMULATION=y
 CONFIG_SHOW_TOUCH_VENDOR=y
 CONFIG_SMARTJOYPLUS_FF=y
@@ -638,4 +668,12 @@ CONFIG_XFRM_USER=y
 CONFIG_ZISOFS=y
 CONFIG_ZRAM_DEBUG=y
 CONFIG_ZRAM=y
+# ZRAM's own driver (drivers/block/zram/Kconfig) defaults to LZO, which is
+# what the earlier disabled zram attempts (75% and 25%, both caused video
+# stutter) actually ran with -- LZO's compression ratio is good but its
+# compress/decompress cost is high, competing with real-time video decode
+# on this weak dual-core SoC. Switch to MediaTek's own LZ4K compressor,
+# tuned for this chip family and much lighter on CPU per operation.
+CONFIG_ZRAM_LZ4K_COMPRESS=y
+CONFIG_ZRAM_DEFAULT_COMP_ALGORITHM="lz4k"
 CONFIG_ZSMALLOC=y

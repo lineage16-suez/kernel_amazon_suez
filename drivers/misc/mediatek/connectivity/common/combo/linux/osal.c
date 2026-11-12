@@ -1102,6 +1102,21 @@ INT32 osal_lock_sleepable_lock(P_OSAL_SLEEPABLE_LOCK pSL)
 	return mutex_lock_killable(&pSL->lock);
 }
 
+INT32 osal_trylock_sleepable_lock_timeout(P_OSAL_SLEEPABLE_LOCK pSL, UINT32 timeoutMs)
+{
+#define OSAL_TRYLOCK_POLL_MS 20
+	UINT32 waited = 0;
+
+	while (!mutex_trylock(&pSL->lock)) {
+		if (waited >= timeoutMs)
+			return -1;
+		msleep(OSAL_TRYLOCK_POLL_MS);
+		waited += OSAL_TRYLOCK_POLL_MS;
+	}
+	return 0;
+#undef OSAL_TRYLOCK_POLL_MS
+}
+
 INT32 osal_unlock_sleepable_lock(P_OSAL_SLEEPABLE_LOCK pSL)
 {
 	mutex_unlock(&pSL->lock);
